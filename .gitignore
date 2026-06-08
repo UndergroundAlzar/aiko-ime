@@ -1,0 +1,42 @@
+# Rust / build output
+/target/
+/dist/
+
+# Runtime-local files
+/config.toml
+/credentials.json
+/dictation_history.jsonl
+*.log
+logs/
+
+# Local handoff/debug notes
+/HANDOFF.md
+/build_errors.txt
+/PRD/
+
+# Release archives and local test folders
+*.zip
+/portable_aiko_test/
+/*_work*/
+
+# Local generated media / screenshots
+/Gemini_Generated_Image_*.png
+*.screenshot.png
+screenshot-*.png
+
+# Bundled local tooling archives/binaries
+/tools/protoc/
+/protoc-*.zip
+
+# Build artifacts
+*.exe
+*.dll
+*.pdb
+
+# IDE / OS files
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
