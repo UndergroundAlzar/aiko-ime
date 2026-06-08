@@ -71,4 +71,4 @@ jobs:
       with:
         files: release/*
         draft: false
-        prerelease: false
+        prerelease: true

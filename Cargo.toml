@@ -3,7 +3,7 @@ name = "aiko-ime"
 version = "1.1.1"
 edition = "2021"
 authors = ["AikoIME Team"]
-description = "Windows voice input tool AikoIME"
+description = "Windows 语音输入助手 / Windows voice input tool"
 license = "MIT"
 
 [dependencies]

@@ -1,29 +1,29 @@
-# Aiko IME - Configuration File
-# Aiko IME 配置文件
+# Aiko IME 配置文件 / Configuration File
 
 [general]
-# 开机自启动
+# 开机自启动 / Launch at startup
 auto_start = false
-# 语言
+# 语言 / Language
 language = "zh-CN"
 
 [hotkey]
 # 热键模式: "combo" (组合键) 或 "double_tap" (双击)
+# Hotkey mode: "combo" or "double_tap"
 mode = "double_tap"
-# 组合键 (当 mode = "combo" 时生效)
+# 组合键，当 mode = "combo" 时生效 / Combo hotkey, used when mode = "combo"
 combo_key = "Ctrl+Shift+V"
-# 双击键 (当 mode = "double_tap" 时生效)
+# 双击键，当 mode = "double_tap" 时生效 / Double-tap key, used when mode = "double_tap"
 double_tap_key = "Ctrl"
-# 双击间隔 (毫秒)
+# 双击间隔，单位毫秒 / Double-tap interval in milliseconds
 double_tap_interval = 300
 
 [floating_button]
-# 是否显示悬浮按钮
+# 是否显示悬浮按钮 / Show floating control
 enabled = true
-# 悬浮按钮位置 (像素)
+# 悬浮按钮位置，单位像素 / Floating control position in pixels
 position_x = 100
 position_y = 100
 
 [asr]
-# 是否启用 VAD (语音活动检测)
+# 是否启用 VAD，语音活动检测 / Enable VAD, voice activity detection
 vad_enabled = true
