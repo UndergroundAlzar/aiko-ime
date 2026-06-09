@@ -58,6 +58,19 @@ if (Test-Path "README.md") {
     Write-Host "✅ Copied README" -ForegroundColor Green
 }
 
+# Copy release notes
+if (Test-Path "RELEASE_NOTES.md") {
+    Copy-Item "RELEASE_NOTES.md" $PortableDir
+    Write-Host "✅ Copied release notes" -ForegroundColor Green
+}
+
+# Copy README image assets
+if (Test-Path "assets\aiko_readme_showcase.png") {
+    New-Item -ItemType Directory -Force -Path "$PortableDir\assets" | Out-Null
+    Copy-Item "assets\aiko_readme_showcase.png" "$PortableDir\assets\"
+    Write-Host "✅ Copied README image assets" -ForegroundColor Green
+}
+
 # Create version file
 "v$Version" | Out-File "$PortableDir\VERSION.txt" -Encoding UTF8
 

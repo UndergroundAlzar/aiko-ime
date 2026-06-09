@@ -3,5 +3,7 @@
 mod config;
 mod credential;
 
-pub use config::{AppConfig, AsrConfig, FloatingButtonConfig, GeneralConfig, HotkeyConfig};
+pub use config::{
+    AppConfig, AsrConfig, DesktopPetConfig, FloatingButtonConfig, GeneralConfig, HotkeyConfig,
+};
 pub use credential::CredentialStore;

@@ -1,5 +1,7 @@
 # Aiko IME
 
+![Aiko IME showcase](assets/aiko_readme_showcase.png)
+
 Aiko IME 是一款面向 Windows 的轻量语音输入工具，使用 Rust 编写。它通过全局热键开始录音，把麦克风音频流式发送到 ASR 后端，并通过 Win32 `SendInput` API 将识别结果输入到当前正在使用的应用里。
 
 Aiko IME is a lightweight Windows voice input tool written in Rust. It listens for a global hotkey, records microphone audio, streams it to an ASR backend, and inserts recognized text into the currently focused application through the Win32 `SendInput` API.
@@ -20,6 +22,8 @@ This project is inspired by and derived from [EvanDbg/doubao-ime-win](https://gi
   Floating control: a small topmost HUD with recording waveform, confirm, and cancel controls.
 - 系统托盘：可从托盘菜单开始、停止、打开设置或退出。
   System tray: start, stop, settings, and quit from the tray menu.
+- Aiko 桌宠：可从托盘菜单显示或隐藏桌面小 Aiko。
+  Aiko desktop pet: show or hide the small desktop companion from the tray menu.
 - 文本输入：识别结果会通过 Windows 原生输入事件插入到当前应用。
   Text insertion: recognized text is inserted into the active app using native Windows input events.
 - 便携使用：发布版可以打包为包含 `aiko-ime.exe` 和 `config.toml` 的便携目录。
@@ -58,6 +62,10 @@ On first launch, Aiko IME creates local runtime files next to the executable, in
 
 The floating window can be dragged. Its position is saved in `config.toml`.
 
+桌宠可以从托盘菜单的 `显示/隐藏桌宠` 开关控制，也可以在配置文件中设置默认状态。
+
+The desktop pet can be controlled from the tray menu item `显示/隐藏桌宠`, or configured as enabled/disabled by default.
+
 ## 配置 / Configuration
 
 从源码运行时，可以把 `config.toml.example` 复制为 `config.toml`；使用便携版时，直接编辑可执行文件旁边生成的 `config.toml`。
@@ -75,6 +83,12 @@ double_tap_interval = 300
 enabled = true
 position_x = 100
 position_y = 100
+
+[desktop_pet]
+enabled = true
+position_x = -1
+position_y = -1
+size = 160
 ```
 
 如果想使用组合键，而不是双击 `Ctrl`：
@@ -133,8 +147,10 @@ The portable package is written to `dist\aiko-ime-portable` and `aiko-ime-v<vers
   Device registration, ASR protocol, and WebSocket client.
 - `src/business/text_inserter.rs`：Win32 文本插入。
   Win32 text insertion.
-- `src/ui/`：系统托盘和悬浮窗口。
-  System tray and floating window.
+- `src/ui/`：系统托盘、悬浮窗口和桌宠窗口。
+  System tray, floating window, and desktop pet window.
+- `assets/`：Aiko 图标、托盘图标、README 展示图和桌宠素材。
+  Aiko app icon, tray icon, README showcase image, and desktop pet assets.
 
 ## ASR 服务说明 / Notes On The ASR Provider
 

@@ -17,6 +17,8 @@ pub struct AppConfig {
     #[serde(default)]
     pub floating_button: FloatingButtonConfig,
     #[serde(default)]
+    pub desktop_pet: DesktopPetConfig,
+    #[serde(default)]
     pub asr: AsrConfig,
     #[serde(default)]
     pub ai: AiConfig,
@@ -30,6 +32,7 @@ impl Default for AppConfig {
             general: GeneralConfig::default(),
             hotkey: HotkeyConfig::default(),
             floating_button: FloatingButtonConfig::default(),
+            desktop_pet: DesktopPetConfig::default(),
             asr: AsrConfig::default(),
             ai: AiConfig::default(),
             custom_vocabulary: std::collections::HashMap::new(),
@@ -195,6 +198,42 @@ impl Default for FloatingButtonConfig {
             position_y: 100,
             stiffness: 180.0,
             damping: 12.0,
+        }
+    }
+}
+
+/// Desktop pet configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DesktopPetConfig {
+    #[serde(default = "default_desktop_pet_enabled")]
+    pub enabled: bool,
+    #[serde(default = "default_desktop_pet_position")]
+    pub position_x: i32,
+    #[serde(default = "default_desktop_pet_position")]
+    pub position_y: i32,
+    #[serde(default = "default_desktop_pet_size")]
+    pub size: i32,
+}
+
+fn default_desktop_pet_enabled() -> bool {
+    true
+}
+
+fn default_desktop_pet_position() -> i32 {
+    -1
+}
+
+fn default_desktop_pet_size() -> i32 {
+    160
+}
+
+impl Default for DesktopPetConfig {
+    fn default() -> Self {
+        Self {
+            enabled: default_desktop_pet_enabled(),
+            position_x: default_desktop_pet_position(),
+            position_y: default_desktop_pet_position(),
+            size: default_desktop_pet_size(),
         }
     }
 }

@@ -57,6 +57,8 @@ jobs:
         Copy-Item target/release/aiko-ime.exe release/aiko-ime.exe
         Copy-Item config.toml.example release/config.toml
         Copy-Item README.md release/README.md
+        New-Item -ItemType Directory -Force -Path release/assets | Out-Null
+        Copy-Item assets/aiko_readme_showcase.png release/assets/aiko_readme_showcase.png
     
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
@@ -70,5 +72,6 @@ jobs:
       uses: softprops/action-gh-release@v2
       with:
         files: release/*
+        body_path: RELEASE_NOTES.md
         draft: false
         prerelease: true

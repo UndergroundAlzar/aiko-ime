@@ -24,6 +24,15 @@ enabled = true
 position_x = 100
 position_y = 100
 
+[desktop_pet]
+# 是否默认显示桌宠 / Show the desktop pet by default
+enabled = true
+# 桌宠位置，-1 表示自动放在屏幕右下角 / Desktop pet position; -1 means bottom-right auto placement
+position_x = -1
+position_y = -1
+# 桌宠尺寸，单位像素 / Desktop pet size in pixels
+size = 160
+
 [asr]
 # 是否启用 VAD，语音活动检测 / Enable VAD, voice activity detection
 vad_enabled = true

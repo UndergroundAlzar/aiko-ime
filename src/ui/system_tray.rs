@@ -7,15 +7,15 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tray_icon::{
-    menu::{Menu, MenuEvent, MenuItem, PredefinedMenuItem},
+    menu::{CheckMenuItem, Menu, MenuEvent, MenuItem, PredefinedMenuItem},
     TrayIconBuilder,
 };
 
 use crate::business::{HotkeyManager, VoiceController};
 use crate::data::AppConfig;
 use crate::ui::{
-    ButtonState, FloatingButton, FloatingButtonConfig, FloatingButtonEvent,
-    FloatingButtonStateSetter,
+    ButtonState, DesktopPet, DesktopPetWindowConfig, FloatingButton, FloatingButtonConfig,
+    FloatingButtonEvent, FloatingButtonStateSetter,
 };
 
 fn spawn_recording_state_monitor(
@@ -65,6 +65,20 @@ pub async fn run_app(
         });
     }
 
+    // Create the optional desktop pet. The thread always exists so the tray menu
+    // can show it later even when it starts hidden.
+    let desktop_pet = DesktopPet::new();
+    let desktop_pet_handle = desktop_pet.handle();
+    let pet_config = DesktopPetWindowConfig {
+        visible: config.desktop_pet.enabled,
+        initial_x: config.desktop_pet.position_x,
+        initial_y: config.desktop_pet.position_y,
+        size: config.desktop_pet.size,
+    };
+    std::thread::spawn(move || {
+        desktop_pet.run(pet_config);
+    });
+
     // Create tray icon on main thread
     let icon = load_icon()?;
     let menu = Menu::new();
@@ -72,18 +86,24 @@ pub async fn run_app(
     let start_item = MenuItem::new("开始语音输入", true, None);
     let stop_item = MenuItem::new("停止语音输入", true, None);
     let separator1 = PredefinedMenuItem::separator();
+    let toggle_pet_item =
+        CheckMenuItem::new("显示/隐藏桌宠", true, config.desktop_pet.enabled, None);
+    let separator_pet = PredefinedMenuItem::separator();
     let settings_item = MenuItem::new("设置...", true, None);
     let separator2 = PredefinedMenuItem::separator();
     let quit_item = MenuItem::new("退出", true, None);
 
     let start_id = start_item.id().clone();
     let stop_id = stop_item.id().clone();
+    let toggle_pet_id = toggle_pet_item.id().clone();
     let settings_id = settings_item.id().clone();
     let quit_id = quit_item.id().clone();
 
     menu.append(&start_item)?;
     menu.append(&stop_item)?;
     menu.append(&separator1)?;
+    menu.append(&toggle_pet_item)?;
+    menu.append(&separator_pet)?;
     menu.append(&settings_item)?;
     menu.append(&separator2)?;
     menu.append(&quit_item)?;
@@ -142,8 +162,10 @@ pub async fn run_app(
     let running_clone = running.clone();
     let vc_clone = voice_controller.clone();
     let state_setter_clone = button_state_setter.clone();
+    let pet_handle = desktop_pet_handle.clone();
     let _keep_hotkey_manager = hotkey_manager;
     let mut config = config;
+    let mut desktop_pet_visible = config.desktop_pet.enabled;
 
     std::thread::spawn(move || {
         let _keep = _keep_hotkey_manager;
@@ -183,6 +205,19 @@ pub async fn run_app(
                             setter.set_state(ButtonState::Idle);
                         }
                     });
+                } else if event.id == toggle_pet_id {
+                    desktop_pet_visible = !desktop_pet_visible;
+                    if desktop_pet_visible {
+                        pet_handle.show();
+                        tracing::info!("Desktop pet shown from menu");
+                    } else {
+                        pet_handle.hide();
+                        tracing::info!("Desktop pet hidden from menu");
+                    }
+                    config.desktop_pet.enabled = desktop_pet_visible;
+                    if let Err(e) = config.save() {
+                        tracing::error!("Failed to save desktop pet config: {}", e);
+                    }
                 } else if event.id == settings_id {
                     tracing::info!("Settings from menu");
                     #[cfg(target_os = "windows")]
@@ -191,6 +226,7 @@ pub async fn run_app(
                     }
                 } else if event.id == quit_id {
                     tracing::info!("Quit from menu");
+                    pet_handle.exit();
                     running_clone.store(false, Ordering::SeqCst);
                     #[cfg(target_os = "windows")]
                     unsafe {
@@ -235,6 +271,7 @@ pub async fn run_app(
                         }
                         FloatingButtonEvent::Exit => {
                             tracing::info!("Exit from floating button");
+                            pet_handle.exit();
                             running_clone.store(false, Ordering::SeqCst);
                             #[cfg(target_os = "windows")]
                             unsafe {
@@ -290,120 +327,10 @@ pub async fn run_app(
 
 /// Load the tray icon with modern appearance
 fn load_icon() -> Result<tray_icon::Icon> {
-    let width = 32u32;
-    let height = 32u32;
-    let mut rgba = Vec::with_capacity((width * height * 4) as usize);
-
-    let center_x = width as f32 / 2.0;
-    let center_y = height as f32 / 2.0;
-    let radius = (width.min(height) as f32 / 2.0) - 1.0;
-
-    // Modern gradient colors (purple to blue)
-    let color_start = (139u8, 92u8, 246u8); // Purple
-    let color_end = (59u8, 130u8, 246u8); // Blue
-
-    for y in 0..height {
-        for x in 0..width {
-            let dx = x as f32 - center_x;
-            let dy = y as f32 - center_y;
-            let dist = (dx * dx + dy * dy).sqrt();
-
-            if dist <= radius {
-                // Gradient based on position (top-left to bottom-right)
-                let gradient_t = ((x as f32 / width as f32) + (y as f32 / height as f32)) / 2.0;
-                let r = (color_start.0 as f32 * (1.0 - gradient_t)
-                    + color_end.0 as f32 * gradient_t) as u8;
-                let g = (color_start.1 as f32 * (1.0 - gradient_t)
-                    + color_end.1 as f32 * gradient_t) as u8;
-                let b = (color_start.2 as f32 * (1.0 - gradient_t)
-                    + color_end.2 as f32 * gradient_t) as u8;
-
-                // Soft edge anti-aliasing
-                let alpha = if dist > radius - 1.5 {
-                    ((radius - dist + 1.5) / 1.5 * 255.0) as u8
-                } else {
-                    255
-                };
-
-                rgba.push(r);
-                rgba.push(g);
-                rgba.push(b);
-                rgba.push(alpha);
-            } else {
-                rgba.push(0);
-                rgba.push(0);
-                rgba.push(0);
-                rgba.push(0);
-            }
-        }
-    }
-
-    // Draw modern microphone icon (white, clean design)
-    let mic_color = (255u8, 255u8, 255u8, 255u8);
-    let cx = center_x as i32;
-    let cy = center_y as i32;
-
-    // Mic head (rounded rectangle)
-    for dy in -5..=3 {
-        for dx in -3..=3 {
-            let in_corner = (dy == -5 || dy == 3) && (dx == -3 || dx == 3);
-            if !in_corner {
-                let idx = ((cy + dy) as u32 * width + (cx + dx) as u32) as usize * 4;
-                if idx + 3 < rgba.len() {
-                    rgba[idx] = mic_color.0;
-                    rgba[idx + 1] = mic_color.1;
-                    rgba[idx + 2] = mic_color.2;
-                    rgba[idx + 3] = mic_color.3;
-                }
-            }
-        }
-    }
-
-    // Mic holder arc (U shape)
-    for dx in -5..=5 {
-        let idx = ((cy + 6) as u32 * width + (cx + dx) as u32) as usize * 4;
-        if idx + 3 < rgba.len() {
-            rgba[idx] = mic_color.0;
-            rgba[idx + 1] = mic_color.1;
-            rgba[idx + 2] = mic_color.2;
-            rgba[idx + 3] = mic_color.3;
-        }
-    }
-    for dy in 3..=6 {
-        for dx in [-5, 5] {
-            let idx = ((cy + dy) as u32 * width + (cx + dx) as u32) as usize * 4;
-            if idx + 3 < rgba.len() {
-                rgba[idx] = mic_color.0;
-                rgba[idx + 1] = mic_color.1;
-                rgba[idx + 2] = mic_color.2;
-                rgba[idx + 3] = mic_color.3;
-            }
-        }
-    }
-
-    // Mic stand
-    for dy in 7..=10 {
-        let idx = ((cy + dy) as u32 * width + cx as u32) as usize * 4;
-        if idx + 3 < rgba.len() {
-            rgba[idx] = mic_color.0;
-            rgba[idx + 1] = mic_color.1;
-            rgba[idx + 2] = mic_color.2;
-            rgba[idx + 3] = mic_color.3;
-        }
-    }
-
-    // Mic base
-    for dx in -3..=3 {
-        let idx = ((cy + 10) as u32 * width + (cx + dx) as u32) as usize * 4;
-        if idx + 3 < rgba.len() {
-            rgba[idx] = mic_color.0;
-            rgba[idx + 1] = mic_color.1;
-            rgba[idx + 2] = mic_color.2;
-            rgba[idx + 3] = mic_color.3;
-        }
-    }
-
-    let icon = tray_icon::Icon::from_rgba(rgba, width, height)?;
+    let image =
+        image::load_from_memory(include_bytes!("../../assets/aiko_tray_icon.png"))?.into_rgba8();
+    let (width, height) = image.dimensions();
+    let icon = tray_icon::Icon::from_rgba(image.into_raw(), width, height)?;
     Ok(icon)
 }
 
