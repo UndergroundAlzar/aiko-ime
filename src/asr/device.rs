@@ -21,6 +21,8 @@ pub struct DeviceCredentials {
     pub openudid: String,
     pub clientudid: String,
     pub token: String,
+    #[serde(default)]
+    pub created_at_ms: u64,
 }
 
 impl DeviceCredentials {
@@ -33,12 +35,20 @@ impl DeviceCredentials {
             openudid: generate_openudid(),
             clientudid: Uuid::new_v4().to_string(),
             token: String::new(),
+            created_at_ms: current_time_ms(),
         }
     }
 
     /// Check if credentials are complete
     pub fn is_complete(&self) -> bool {
         !self.device_id.is_empty() && !self.token.is_empty()
+    }
+
+    /// Cached credentials are intentionally short-lived because the upstream
+    /// unofficial Doubao endpoint can reject older device registrations.
+    pub fn is_fresh(&self) -> bool {
+        const MAX_AGE_MS: u64 = 24 * 60 * 60 * 1000;
+        self.created_at_ms > 0 && current_time_ms().saturating_sub(self.created_at_ms) <= MAX_AGE_MS
     }
 
     /// Save credentials to file

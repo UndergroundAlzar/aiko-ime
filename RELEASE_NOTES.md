@@ -1,4 +1,4 @@
-# Aiko IME v1.2.0 Release Notes / 发布说明
+# Aiko IME v1.2.1 Release Notes / 发布说明
 
 ## 中文
 
@@ -7,6 +7,10 @@
 - 新增 `[desktop_pet]` 配置项：支持设置默认显示状态、初始位置和尺寸。
 - 便携包和 GitHub Release 会包含 README 展示图，保证离线查看文档时图片也能显示。
 - 应用程序 exe 已嵌入 Aiko 图标，Windows 文件管理器和快捷方式中会显示新图标。
+- 修复部分网络环境下 ASR WebSocket 卡在不可用 IPv6 地址的问题。
+- 修复旧缓存凭据导致 ASR 后端 `service discovery failure` 的问题。
+- 修复录音过程中插入文字后，双击 `Ctrl` 无法再次停止录音的问题。
+- CLI 的 ASR 测试现在会做真实 WebSocket 握手，而不是只打印本地凭据。
 
 ## English
 
@@ -15,3 +19,7 @@
 - Added `[desktop_pet]` configuration for default visibility, initial position, and size.
 - Portable packages and GitHub Releases include the README showcase image so the documentation renders correctly offline.
 - The Windows executable now embeds the Aiko app icon for File Explorer and shortcuts.
+- Fixed ASR WebSocket connection stalls on networks where the endpoint exposes an unreachable IPv6 route.
+- Fixed stale cached credentials causing ASR backend `service discovery failure`.
+- Fixed double-tap `Ctrl` failing to stop recording after dictated text was inserted.
+- CLI ASR diagnostics now perform a real WebSocket handshake instead of only printing local credentials.

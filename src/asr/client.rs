@@ -4,10 +4,16 @@
 
 use anyhow::{anyhow, Result};
 use futures_util::{SinkExt, StreamExt};
+use std::net::SocketAddr;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use tokio::net::{lookup_host, TcpStream};
 use tokio::sync::mpsc;
 use tokio::time::timeout;
-use tokio_tungstenite::{connect_async, tungstenite::Message};
+use tokio_tungstenite::{
+    client_async_tls_with_config,
+    tungstenite::{handshake::client::Response, Message},
+    MaybeTlsStream, WebSocketStream,
+};
 use uuid::Uuid;
 
 use super::constants::*;
@@ -18,8 +24,11 @@ use super::protocol::{
     parse_response, AsrResponse, ResponseType, SessionConfig,
 };
 
-const WS_CONNECT_TIMEOUT: Duration = Duration::from_secs(8);
+const WS_CONNECT_TIMEOUT: Duration = Duration::from_secs(12);
+const WS_TCP_ATTEMPT_TIMEOUT: Duration = Duration::from_secs(4);
 const WS_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(5);
+const WS_HOST: &str = "frontier-audio-ime-ws.doubao.com";
+const WS_PORT: u16 = 443;
 
 /// ASR Client for real-time speech recognition
 pub struct AsrClient {
@@ -69,7 +78,7 @@ impl AsrClient {
             .body(())?;
 
         tracing::info!("Connecting to ASR WebSocket: {}", url);
-        let (ws_stream, _) = timeout(WS_CONNECT_TIMEOUT, connect_async(request))
+        let (ws_stream, _) = timeout(WS_CONNECT_TIMEOUT, connect_websocket_ipv4_first(request))
             .await
             .map_err(|_| {
                 anyhow!(
@@ -227,6 +236,36 @@ impl AsrClient {
         Ok(result_rx)
     }
 
+    /// Verify that the ASR WebSocket endpoint is reachable without consuming an ASR session.
+    pub async fn test_connection(&self) -> Result<()> {
+        let url = self.ws_url();
+        let request = tokio_tungstenite::tungstenite::http::Request::builder()
+            .uri(&url)
+            .header("User-Agent", USER_AGENT)
+            .header("proto-version", "v2")
+            .header("x-custom-keepalive", "true")
+            .header("Host", WS_HOST)
+            .header("Connection", "Upgrade")
+            .header("Upgrade", "websocket")
+            .header("Sec-WebSocket-Version", "13")
+            .header(
+                "Sec-WebSocket-Key",
+                tokio_tungstenite::tungstenite::handshake::client::generate_key(),
+            )
+            .body(())?;
+
+        let (ws_stream, _) = timeout(WS_CONNECT_TIMEOUT, connect_websocket_ipv4_first(request))
+            .await
+            .map_err(|_| {
+                anyhow!(
+                    "ASR WebSocket connect timed out after {}s",
+                    WS_CONNECT_TIMEOUT.as_secs()
+                )
+            })??;
+        drop(ws_stream);
+        Ok(())
+    }
+
     /// Call OpenAI/DeepSeek compatible API for post-processing or translation
     pub async fn call_ai_api(
         endpoint: &str,
@@ -290,6 +329,54 @@ impl AsrClient {
 
         Ok(content.trim().to_string())
     }
+}
+
+async fn connect_websocket_ipv4_first(
+    request: tokio_tungstenite::tungstenite::http::Request<()>,
+) -> Result<(WebSocketStream<MaybeTlsStream<TcpStream>>, Response)> {
+    let mut addrs: Vec<SocketAddr> = lookup_host((WS_HOST, WS_PORT)).await?.collect();
+    if addrs.is_empty() {
+        return Err(anyhow!("ASR host resolved to no addresses"));
+    }
+
+    // Some networks expose an unreachable IPv6 route for this Doubao endpoint.
+    // Prefer IPv4 so the connection does not stall before trying a reachable address.
+    addrs.sort_by_key(|addr| if addr.is_ipv4() { 0 } else { 1 });
+
+    let mut last_error = None;
+    for addr in addrs {
+        tracing::debug!("Trying ASR WebSocket address: {}", addr);
+        match timeout(WS_TCP_ATTEMPT_TIMEOUT, TcpStream::connect(addr)).await {
+            Ok(Ok(socket)) => {
+                if let Err(e) = socket.set_nodelay(true) {
+                    tracing::warn!("Failed to set TCP_NODELAY for ASR socket: {}", e);
+                }
+
+                return client_async_tls_with_config(request.clone(), socket, None, None)
+                    .await
+                    .map_err(|e| anyhow!("ASR WebSocket handshake failed: {}", e));
+            }
+            Ok(Err(e)) => {
+                tracing::warn!("ASR TCP connect failed for {}: {}", addr, e);
+                last_error = Some(e.to_string());
+            }
+            Err(_) => {
+                tracing::warn!(
+                    "ASR TCP connect timed out for {} after {}s",
+                    addr,
+                    WS_TCP_ATTEMPT_TIMEOUT.as_secs()
+                );
+                last_error = Some(format!("connect timed out for {}", addr));
+            }
+        }
+    }
+
+    Err(anyhow!(
+        "ASR TCP connect failed for all resolved addresses{}",
+        last_error
+            .map(|e| format!("; last error: {}", e))
+            .unwrap_or_default()
+    ))
 }
 
 /// Get current timestamp in milliseconds

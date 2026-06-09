@@ -237,8 +237,16 @@ async fn run_cli_mode() -> Result<()> {
                     "   Token: {}...",
                     &credentials.token[..20.min(credentials.token.len())]
                 );
-                println!("✅ ASR 凭据有效");
-                println!("   完整 ASR 测试需要开始录音 (命令: s)");
+                match asr_client.test_connection().await {
+                    Ok(_) => {
+                        println!("✅ ASR WebSocket 握手成功");
+                        println!("   完整识别测试需要开始录音并说话 (命令: s)");
+                    }
+                    Err(e) => {
+                        error!("ASR connection test failed: {}", e);
+                        println!("❌ ASR 连接测试失败: {}", e);
+                    }
+                }
             }
             "q" | "quit" | "exit" => {
                 println!("👋 退出程序...");

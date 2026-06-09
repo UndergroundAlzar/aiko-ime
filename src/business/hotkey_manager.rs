@@ -212,7 +212,8 @@ fn run_modifier_double_tap_hook<F>(
         last_release: Option<Instant>,
         callback: Arc<dyn Fn() + Send + Sync>,
         is_active: Arc<AtomicBool>,
-        has_other_keys_pressed: bool,
+        target_is_down: bool,
+        other_key_during_target_press: bool,
     }
 
     // Initialize thread-local state
@@ -223,7 +224,8 @@ fn run_modifier_double_tap_hook<F>(
             last_release: None,
             callback: callback as Arc<dyn Fn() + Send + Sync>,
             is_active,
-            has_other_keys_pressed: false,
+            target_is_down: false,
+            other_key_during_target_press: false,
         });
     });
 
@@ -255,9 +257,14 @@ fn run_modifier_double_tap_hook<F>(
                         let is_target = hook_state.target_vks.contains(&vk_code);
 
                         if is_target {
+                            if is_key_down && !hook_state.target_is_down {
+                                hook_state.target_is_down = true;
+                                hook_state.other_key_during_target_press = false;
+                            }
                             if is_key_up {
-                                if hook_state.has_other_keys_pressed {
-                                    hook_state.has_other_keys_pressed = false;
+                                hook_state.target_is_down = false;
+                                if hook_state.other_key_during_target_press {
+                                    hook_state.other_key_during_target_press = false;
                                     hook_state.last_release = None;
                                 } else {
                                     let now = Instant::now();
@@ -276,8 +283,8 @@ fn run_modifier_double_tap_hook<F>(
                                     }
                                 }
                             }
-                        } else if is_key_down {
-                            hook_state.has_other_keys_pressed = true;
+                        } else if is_key_down && hook_state.target_is_down {
+                            hook_state.other_key_during_target_press = true;
                             hook_state.last_release = None;
                         }
                     }

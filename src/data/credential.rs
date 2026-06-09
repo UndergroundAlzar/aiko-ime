@@ -34,12 +34,15 @@ impl CredentialStore {
 
     /// Ensure we have valid credentials
     pub async fn ensure_credentials(&self) -> Result<DeviceCredentials> {
-        // Check if we have existing complete credentials
+        // Check if we have existing complete, fresh credentials.
+        // Older cached device registrations can still pass the settings API
+        // but fail when the ASR backend starts routing audio.
         if let Some(ref creds) = self.credentials {
-            if creds.is_complete() {
+            if creds.is_complete() && creds.is_fresh() {
                 tracing::info!("Using cached credentials");
                 return Ok(creds.clone());
             }
+            tracing::info!("Cached credentials are missing, old, or stale; refreshing");
         }
 
         // Need to register device
