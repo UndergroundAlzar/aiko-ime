@@ -1,6 +1,6 @@
 [package]
 name = "aiko-ime"
-version = "1.2.1"
+version = "1.2.2"
 edition = "2021"
 authors = ["AikoIME Team"]
 description = "Windows 语音输入助手 / Windows voice input tool"

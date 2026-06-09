@@ -1010,6 +1010,7 @@ impl FloatingButton {
 
             const WM_CREATE: u32 = 0x0001;
             const WM_DESTROY: u32 = 0x0002;
+            const WM_ERASEBKGND: u32 = 0x0014;
             const WM_PAINT: u32 = 0x000F;
             const WM_TIMER: u32 = 0x0113;
             const WM_MOUSEMOVE: u32 = 0x0200;
@@ -1049,6 +1050,7 @@ impl FloatingButton {
                     let _ = ShowWindow(hwnd, SW_HIDE);
                     LRESULT(0)
                 }
+                WM_ERASEBKGND => LRESULT(1),
                 WM_PAINT => {
                     let mut ps = PAINTSTRUCT::default();
                     let _ = BeginPaint(hwnd, &mut ps);
@@ -1372,18 +1374,6 @@ impl FloatingButton {
             if hwnd.0 == 0 {
                 tracing::error!("CreateWindowExW failed");
                 return;
-            }
-
-            {
-                use windows::Win32::Graphics::Dwm::*;
-                // DWMSBT_TRANSIENTWINDOW (3) sets Acrylic effect, DWMSBT_MAINWINDOW (2) sets Mica
-                let backdrop_type = DWMSBT_TRANSIENTWINDOW;
-                let _ = DwmSetWindowAttribute(
-                    hwnd,
-                    DWMWA_SYSTEMBACKDROP_TYPE,
-                    &backdrop_type as *const _ as *const _,
-                    std::mem::size_of::<DWM_SYSTEMBACKDROP_TYPE>() as u32,
-                );
             }
 
             let _ = ShowWindow(hwnd, SW_HIDE);

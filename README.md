@@ -126,7 +126,7 @@ cargo build --release
 
 ```powershell
 $env:PROTOC = "C:\path\to\protoc.exe"
-.\scripts\build-portable.ps1 -Version "1.2.1"
+.\scripts\build-portable.ps1 -Version "1.2.2"
 ```
 
 便携包会输出到 `dist\aiko-ime-portable`，并生成 `aiko-ime-v<version>-portable.zip`。
