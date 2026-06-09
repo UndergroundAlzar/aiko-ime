@@ -1,4 +1,4 @@
-# Aiko IME Release Notes / 发布说明
+# Aiko IME v1.2.0 Release Notes / 发布说明
 
 ## 中文
 
