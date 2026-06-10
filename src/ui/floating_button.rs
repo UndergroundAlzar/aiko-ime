@@ -1674,16 +1674,30 @@ impl FloatingButton {
                     particles.retain(|part| part.life > 0.0);
                 });
 
-                // 6. Handle Window Visibility
+                // 6. Render before the first show so DWM never presents an
+                // uninitialized layered surface as a white rectangle.
                 let visible = IsWindowVisible(hwnd).as_bool();
                 if is_active && !visible {
+                    let mut bar_heights_clone = [3.0f32; 16];
+                    bar_heights_clone.copy_from_slice(&bar_heights);
+                    update_layered_hud(
+                        hwnd,
+                        state_val,
+                        tick,
+                        fade_spring.value,
+                        scale_spring.value,
+                        width_spring.value,
+                        prs,
+                        l_scale_spring.value,
+                        r_scale_spring.value,
+                        l_hover_spring.value,
+                        r_hover_spring.value,
+                        &bar_heights_clone,
+                    );
                     let _ = ShowWindow(hwnd, SW_SHOWNOACTIVATE);
                 } else if !is_active && visible && fade_spring.value < 0.01 {
                     let _ = ShowWindow(hwnd, SW_HIDE);
-                }
-
-                // 7. Render
-                if IsWindowVisible(hwnd).as_bool() {
+                } else if visible {
                     let mut bar_heights_clone = [3.0f32; 16];
                     bar_heights_clone.copy_from_slice(&bar_heights);
 
@@ -1703,7 +1717,7 @@ impl FloatingButton {
                     );
                 }
 
-                // 8. Wait for V-Sync
+                // 7. Wait for V-Sync
                 if DwmFlush().is_err() {
                     std::thread::sleep(std::time::Duration::from_millis(8));
                 }

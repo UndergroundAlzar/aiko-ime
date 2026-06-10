@@ -12,6 +12,8 @@ use uuid::Uuid;
 
 use super::constants::*;
 
+const MIN_DEVICE_ID_DIGITS: usize = 16;
+
 /// Device credentials for ASR authentication
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DeviceCredentials {
@@ -41,7 +43,9 @@ impl DeviceCredentials {
 
     /// Check if credentials are complete
     pub fn is_complete(&self) -> bool {
-        !self.device_id.is_empty() && !self.token.is_empty()
+        self.device_id.len() >= MIN_DEVICE_ID_DIGITS
+            && self.install_id.len() >= MIN_DEVICE_ID_DIGITS
+            && !self.token.is_empty()
     }
 
     /// Cached credentials are intentionally short-lived because the upstream
@@ -260,12 +264,25 @@ pub async fn register_device(creds: &mut DeviceCredentials) -> Result<()> {
 
     let result: DeviceRegisterResponse = response.json().await?;
 
-    if result.device_id == 0 {
-        return Err(anyhow!("Device registration returned invalid device_id"));
+    let device_id = result
+        .device_id_str
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| result.device_id.to_string());
+    let install_id = result
+        .install_id_str
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| result.install_id.to_string());
+
+    if device_id.len() < MIN_DEVICE_ID_DIGITS || install_id.len() < MIN_DEVICE_ID_DIGITS {
+        return Err(anyhow!(
+            "Device registration returned short IDs (device_id={} digits, install_id={} digits)",
+            device_id.len(),
+            install_id.len()
+        ));
     }
 
-    creds.device_id = result.device_id.to_string();
-    creds.install_id = result.install_id.to_string();
+    creds.device_id = device_id;
+    creds.install_id = install_id;
 
     tracing::info!("Device registered: device_id={}", creds.device_id);
     Ok(())
@@ -310,4 +327,22 @@ pub async fn get_asr_token(creds: &mut DeviceCredentials) -> Result<()> {
 
     tracing::info!("ASR token obtained successfully");
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn complete_credentials_require_full_length_ids() {
+        let mut credentials = DeviceCredentials::new_generated();
+        credentials.device_id = "76289586765626".to_string();
+        credentials.install_id = "76289586769722".to_string();
+        credentials.token = "token".to_string();
+        assert!(!credentials.is_complete());
+
+        credentials.device_id = "3594726794116969".to_string();
+        credentials.install_id = "3594726794121065".to_string();
+        assert!(credentials.is_complete());
+    }
 }

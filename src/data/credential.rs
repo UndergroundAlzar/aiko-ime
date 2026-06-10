@@ -2,8 +2,9 @@
 //!
 //! Manages device credentials with optional encryption.
 
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use std::path::PathBuf;
+use std::time::Duration;
 
 use crate::asr::{get_asr_token, register_device, DeviceCredentials};
 use crate::data::AppConfig;
@@ -45,20 +46,46 @@ impl CredentialStore {
             tracing::info!("Cached credentials are missing, old, or stale; refreshing");
         }
 
-        // Need to register device
-        tracing::info!("Registering new device...");
-        let mut creds = DeviceCredentials::new_generated();
+        const MAX_REGISTRATION_ATTEMPTS: usize = 5;
+        let mut last_error = None;
 
-        // Register device to get device_id
-        register_device(&mut creds).await?;
+        for attempt in 1..=MAX_REGISTRATION_ATTEMPTS {
+            tracing::info!(
+                "Registering new device (attempt {}/{})...",
+                attempt,
+                MAX_REGISTRATION_ATTEMPTS
+            );
+            let mut creds = DeviceCredentials::new_generated();
 
-        // Get ASR token
-        get_asr_token(&mut creds).await?;
+            let result = async {
+                register_device(&mut creds).await?;
+                get_asr_token(&mut creds).await?;
+                creds.save(&self.credentials_path)?;
+                Ok::<_, anyhow::Error>(creds)
+            }
+            .await;
 
-        // Save credentials
-        creds.save(&self.credentials_path)?;
-        tracing::info!("Credentials saved to {:?}", self.credentials_path);
+            match result {
+                Ok(creds) => {
+                    tracing::info!("Credentials saved to {:?}", self.credentials_path);
+                    return Ok(creds);
+                }
+                Err(error) => {
+                    tracing::warn!("Device registration attempt {} failed: {}", attempt, error);
+                    last_error = Some(error);
+                    if attempt < MAX_REGISTRATION_ATTEMPTS {
+                        tokio::time::sleep(Duration::from_millis(200 * attempt as u64)).await;
+                    }
+                }
+            }
+        }
 
-        Ok(creds)
+        Err(anyhow!(
+            "Failed to obtain usable ASR credentials after {} attempts: {}",
+            MAX_REGISTRATION_ATTEMPTS,
+            last_error
+                .map(|error| error.to_string())
+                .unwrap_or_else(|| "unknown error".to_string())
+        ))
     }
 }
