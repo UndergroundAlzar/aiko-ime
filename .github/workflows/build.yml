@@ -1,77 +1,123 @@
-name: Build Windows Release
+name: Windows Quality Gate and Release
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [main, master]
     tags:
-      - 'v*'
+      - "v*"
   pull_request:
-    branches: [ main, master ]
+    branches: [main, master]
   workflow_dispatch:
 
 permissions:
   contents: write
+
+concurrency:
+  group: windows-quality-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
   CARGO_TERM_COLOR: always
   CMAKE_POLICY_VERSION_MINIMUM: "3.5"
 
 jobs:
-  build:
+  quality-and-release:
+    name: Test, smoke test, and package
     runs-on: windows-latest
-    
-    steps:
-    - uses: actions/checkout@v4
-    
-    - name: Setup Rust
-      uses: dtolnay/rust-toolchain@stable
-      with:
-        components: rustfmt, clippy
-    
-    - name: Cache cargo registry
-      uses: actions/cache@v4
-      with:
-        path: |
-          ~/.cargo/registry
-          ~/.cargo/git
-          target
-        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-        restore-keys: |
-          ${{ runner.os }}-cargo-
-    
-    - name: Install Protoc
-      uses: arduino/setup-protoc@v3
-      with:
-        version: "25.x"
-    
-    - name: Install CMake
-      uses: lukka/get-cmake@latest
-    
-    - name: Build Release
-      run: cargo build --release
+    timeout-minutes: 45
 
-    - name: Prepare Release Files
-      shell: pwsh
-      run: |
-        New-Item -ItemType Directory -Force -Path release | Out-Null
-        Copy-Item target/release/aiko-ime.exe release/aiko-ime.exe
-        Copy-Item config.toml.example release/config.toml
-        Copy-Item README.md release/README.md
-        New-Item -ItemType Directory -Force -Path release/assets | Out-Null
-        Copy-Item assets/aiko_readme_showcase.png release/assets/aiko_readme_showcase.png
-    
-    - name: Upload Artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: aiko-ime-windows
-        path: release/
-        retention-days: 30
-    
-    - name: Create Release
-      if: startsWith(github.ref, 'refs/tags/v')
-      uses: softprops/action-gh-release@v2
-      with:
-        files: release/*
-        body_path: RELEASE_NOTES.md
-        draft: false
-        prerelease: true
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache Cargo data
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Install protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          version: "25.x"
+
+      - name: Install CMake
+        uses: lukka/get-cmake@latest
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Run Clippy
+        run: cargo clippy --locked --all-targets --all-features
+
+      - name: Run all tests
+        run: cargo test --locked --all-targets
+
+      - name: Build release binary
+        shell: pwsh
+        run: |
+          $previousRustFlags = $env:RUSTFLAGS
+          try {
+            $env:RUSTFLAGS = "-C target-feature=+crt-static"
+            $env:CMAKE_POLICY_VERSION_MINIMUM = "3.5"
+            cargo build --locked --release --target x86_64-pc-windows-msvc
+          }
+          finally {
+            $env:RUSTFLAGS = $previousRustFlags
+          }
+
+      - name: Package and validate portable archive
+        shell: pwsh
+        run: ./scripts/build-portable.ps1 -SkipBuild
+
+      - name: Verify tag matches Cargo version
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: |
+          $version = (Select-String -Path Cargo.toml -Pattern '^version\s*=\s*"([^"]+)"$').Matches[0].Groups[1].Value
+          if ($env:GITHUB_REF -ne "refs/tags/v$version") {
+            throw "Tag '$env:GITHUB_REF' does not match Cargo.toml version 'v$version'."
+          }
+          if (-not (Select-String -Path RELEASE_NOTES.md -SimpleMatch "v$version")) {
+            throw "RELEASE_NOTES.md does not mention v$version."
+          }
+
+      - name: Run Windows smoke tests
+        shell: pwsh
+        run: |
+          $version = (Select-String -Path Cargo.toml -Pattern '^version\s*=\s*"([^"]+)"$').Matches[0].Groups[1].Value
+          ./scripts/Test-WindowsSmoke.ps1 `
+            -BinaryPath "dist/aiko-ime-portable/aiko-ime.exe" `
+            -PackagePath "dist/aiko-ime-v$version-portable.zip"
+
+      - name: Upload portable artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: aiko-ime-windows-portable
+          path: |
+            dist/aiko-ime-v*-portable.zip
+            dist/aiko-ime-v*-portable.zip.sha256
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/aiko-ime-v*-portable.zip
+            dist/aiko-ime-v*-portable.zip.sha256
+          body_path: RELEASE_NOTES.md
+          fail_on_unmatched_files: true
+          draft: false
+          prerelease: false

@@ -15,6 +15,7 @@ use tokio::sync::Mutex;
 use tracing::{error, info, warn};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
+use aiko_ime::platform::{SingleInstance, SingleInstanceStatus};
 use aiko_ime::{
     AppConfig, AsrClient, AudioCapture, CredentialStore, HotkeyManager, TextInserter,
     VoiceController,
@@ -38,6 +39,15 @@ async fn run_ui_mode() -> Result<()> {
     init_logging(false);
 
     info!("Starting AikoIME v{} (UI Mode)", env!("CARGO_PKG_VERSION"));
+
+    let _single_instance = match SingleInstance::acquire()? {
+        SingleInstanceStatus::Primary(guard) => guard,
+        SingleInstanceStatus::AlreadyRunning => {
+            info!("Another Aiko IME instance is already running");
+            SingleInstance::notify_already_running();
+            return Ok(());
+        }
+    };
 
     // Initialize COM for Windows
     #[cfg(target_os = "windows")]

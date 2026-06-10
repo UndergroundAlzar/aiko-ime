@@ -7,5 +7,5 @@ mod text_inserter;
 mod voice_controller;
 
 pub use hotkey_manager::HotkeyManager;
-pub use text_inserter::TextInserter;
+pub use text_inserter::{TextInputError, TextInserter};
 pub use voice_controller::VoiceController;

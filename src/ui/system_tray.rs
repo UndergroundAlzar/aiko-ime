@@ -14,8 +14,9 @@ use tray_icon::{
 use crate::business::{HotkeyManager, VoiceController};
 use crate::data::AppConfig;
 use crate::ui::{
-    ButtonState, DesktopPet, DesktopPetWindowConfig, FloatingButton, FloatingButtonConfig,
-    FloatingButtonEvent, FloatingButtonStateSetter,
+    open_settings, ButtonState, DesktopPet, DesktopPetEvent, DesktopPetHandle,
+    DesktopPetWindowConfig, FloatingButton, FloatingButtonConfig, FloatingButtonEvent,
+    FloatingButtonStateSetter,
 };
 
 fn spawn_recording_state_monitor(
@@ -35,6 +36,89 @@ fn spawn_recording_state_monitor(
                 break;
             }
         }
+    });
+}
+
+fn spawn_start_recording(
+    runtime_handle: &tokio::runtime::Handle,
+    voice_controller: Arc<Mutex<VoiceController>>,
+    setter: FloatingButtonStateSetter,
+    pet_handle: DesktopPetHandle,
+    source: &'static str,
+) {
+    runtime_handle.spawn(async move {
+        let mut controller = voice_controller.lock().await;
+        if controller.is_recording() {
+            return;
+        }
+
+        tracing::info!("Starting voice input from {}", source);
+        setter.set_state(ButtonState::Recording);
+        pet_handle.set_listening();
+        let monitor_vc = voice_controller.clone();
+        let monitor_setter = setter.clone();
+        if let Err(e) = controller.start().await {
+            tracing::error!("Failed to start voice input from {}: {}", source, e);
+            setter.set_state(ButtonState::Idle);
+            pet_handle.set_error();
+        } else {
+            drop(controller);
+            spawn_recording_state_monitor(monitor_vc, monitor_setter);
+        }
+    });
+}
+
+fn spawn_stop_recording(
+    runtime_handle: &tokio::runtime::Handle,
+    voice_controller: Arc<Mutex<VoiceController>>,
+    setter: FloatingButtonStateSetter,
+    pet_handle: DesktopPetHandle,
+    source: &'static str,
+) {
+    runtime_handle.spawn(async move {
+        let mut controller = voice_controller.lock().await;
+        if !controller.is_recording() {
+            pet_handle.set_idle();
+            return;
+        }
+
+        tracing::info!("Stopping voice input from {}", source);
+        setter.set_state(ButtonState::Processing);
+        pet_handle.set_processing();
+        if let Err(e) = controller.stop().await {
+            tracing::error!("Failed to stop voice input from {}: {}", source, e);
+            pet_handle.set_error();
+        } else {
+            pet_handle.set_success();
+        }
+        setter.set_state(ButtonState::Idle);
+    });
+}
+
+fn spawn_cancel_recording(
+    runtime_handle: &tokio::runtime::Handle,
+    voice_controller: Arc<Mutex<VoiceController>>,
+    setter: FloatingButtonStateSetter,
+    pet_handle: DesktopPetHandle,
+    source: &'static str,
+) {
+    runtime_handle.spawn(async move {
+        let mut controller = voice_controller.lock().await;
+        if !controller.is_recording() {
+            pet_handle.set_idle();
+            return;
+        }
+
+        tracing::info!("Cancelling voice input from {}", source);
+        setter.set_state(ButtonState::Processing);
+        pet_handle.set_processing();
+        if let Err(e) = controller.cancel().await {
+            tracing::error!("Failed to cancel voice input from {}: {}", source, e);
+            pet_handle.set_error();
+        } else {
+            pet_handle.set_idle();
+        }
+        setter.set_state(ButtonState::Idle);
     });
 }
 
@@ -67,8 +151,9 @@ pub async fn run_app(
 
     // Create the optional desktop pet. The thread always exists so the tray menu
     // can show it later even when it starts hidden.
-    let desktop_pet = DesktopPet::new();
+    let mut desktop_pet = DesktopPet::new();
     let desktop_pet_handle = desktop_pet.handle();
+    let pet_rx = desktop_pet.take_event_receiver();
     let pet_config = DesktopPetWindowConfig {
         visible: config.desktop_pet.enabled,
         initial_x: config.desktop_pet.position_x,
@@ -128,32 +213,23 @@ pub async fn run_app(
     // Set up hotkey callback with state sync
     let vc_for_hotkey = voice_controller.clone();
     let state_for_hotkey = button_state_setter.clone();
+    let pet_for_hotkey = desktop_pet_handle.clone();
     let handle_for_hotkey = runtime_handle.clone();
     hotkey_manager.on_trigger(move || {
         let vc = vc_for_hotkey.clone();
         let setter = state_for_hotkey.clone();
+        let pet = pet_for_hotkey.clone();
         let handle = handle_for_hotkey.clone();
+        let nested_handle = handle.clone();
         handle.spawn(async move {
-            let mut controller = vc.lock().await;
-            if controller.is_recording() {
-                tracing::info!("Hotkey: stopping voice input");
-                setter.set_state(ButtonState::Processing);
-                if let Err(e) = controller.stop().await {
-                    tracing::error!("Failed to stop voice input: {}", e);
-                }
-                setter.set_state(ButtonState::Idle);
+            let recording = {
+                let controller = vc.lock().await;
+                controller.is_recording()
+            };
+            if recording {
+                spawn_stop_recording(&nested_handle, vc, setter, pet, "hotkey");
             } else {
-                tracing::info!("Hotkey: starting voice input");
-                setter.set_state(ButtonState::Recording);
-                let monitor_vc = vc.clone();
-                let monitor_setter = setter.clone();
-                if let Err(e) = controller.start().await {
-                    tracing::error!("Failed to start voice input: {}", e);
-                    setter.set_state(ButtonState::Idle);
-                } else {
-                    drop(controller);
-                    spawn_recording_state_monitor(monitor_vc, monitor_setter);
-                }
+                spawn_start_recording(&nested_handle, vc, setter, pet, "hotkey");
             }
         });
     });
@@ -175,36 +251,23 @@ pub async fn run_app(
                 if event.id == start_id {
                     let vc = vc_clone.clone();
                     let setter = state_setter_clone.clone();
-                    runtime_handle.spawn(async move {
-                        let mut controller = vc.lock().await;
-                        if !controller.is_recording() {
-                            tracing::info!("Starting from menu");
-                            setter.set_state(ButtonState::Recording);
-                            let monitor_vc = vc.clone();
-                            let monitor_setter = setter.clone();
-                            if let Err(e) = controller.start().await {
-                                tracing::error!("Failed to start: {}", e);
-                                setter.set_state(ButtonState::Idle);
-                            } else {
-                                drop(controller);
-                                spawn_recording_state_monitor(monitor_vc, monitor_setter);
-                            }
-                        }
-                    });
+                    spawn_start_recording(
+                        &runtime_handle,
+                        vc,
+                        setter,
+                        pet_handle.clone(),
+                        "tray menu",
+                    );
                 } else if event.id == stop_id {
                     let vc = vc_clone.clone();
                     let setter = state_setter_clone.clone();
-                    runtime_handle.spawn(async move {
-                        let mut controller = vc.lock().await;
-                        if controller.is_recording() {
-                            tracing::info!("Stopping from menu");
-                            setter.set_state(ButtonState::Processing);
-                            if let Err(e) = controller.stop().await {
-                                tracing::error!("Failed to stop: {}", e);
-                            }
-                            setter.set_state(ButtonState::Idle);
-                        }
-                    });
+                    spawn_stop_recording(
+                        &runtime_handle,
+                        vc,
+                        setter,
+                        pet_handle.clone(),
+                        "tray menu",
+                    );
                 } else if event.id == toggle_pet_id {
                     desktop_pet_visible = !desktop_pet_visible;
                     if desktop_pet_visible {
@@ -220,9 +283,8 @@ pub async fn run_app(
                     }
                 } else if event.id == settings_id {
                     tracing::info!("Settings from menu");
-                    #[cfg(target_os = "windows")]
-                    {
-                        run_hotkey_recorder();
+                    if let Err(e) = open_settings() {
+                        tracing::error!("Failed to open settings: {}", e);
                     }
                 } else if event.id == quit_id {
                     tracing::info!("Quit from menu");
@@ -242,32 +304,24 @@ pub async fn run_app(
                         FloatingButtonEvent::ConfirmRecording => {
                             let vc = vc_clone.clone();
                             let setter = state_setter_clone.clone();
-                            runtime_handle.spawn(async move {
-                                let mut controller = vc.lock().await;
-                                if controller.is_recording() {
-                                    tracing::info!("Floating: confirm (stop, keep text)");
-                                    setter.set_state(ButtonState::Processing);
-                                    if let Err(e) = controller.stop().await {
-                                        tracing::error!("Failed to stop: {}", e);
-                                    }
-                                    setter.set_state(ButtonState::Idle);
-                                }
-                            });
+                            spawn_stop_recording(
+                                &runtime_handle,
+                                vc,
+                                setter,
+                                pet_handle.clone(),
+                                "floating confirm",
+                            );
                         }
                         FloatingButtonEvent::CancelRecording => {
                             let vc = vc_clone.clone();
                             let setter = state_setter_clone.clone();
-                            runtime_handle.spawn(async move {
-                                let mut controller = vc.lock().await;
-                                if controller.is_recording() {
-                                    tracing::info!("Floating: cancel (stop, discard text)");
-                                    setter.set_state(ButtonState::Processing);
-                                    if let Err(e) = controller.cancel().await {
-                                        tracing::error!("Failed to cancel: {}", e);
-                                    }
-                                    setter.set_state(ButtonState::Idle);
-                                }
-                            });
+                            spawn_cancel_recording(
+                                &runtime_handle,
+                                vc,
+                                setter,
+                                pet_handle.clone(),
+                                "floating cancel",
+                            );
                         }
                         FloatingButtonEvent::Exit => {
                             tracing::info!("Exit from floating button");
@@ -286,6 +340,56 @@ pub async fn run_app(
                             } else {
                                 tracing::debug!("Saved floating button position: ({}, {})", x, y);
                             }
+                        }
+                    }
+                }
+            }
+
+            if let Some(ref rx) = pet_rx {
+                while let Ok(event) = rx.try_recv() {
+                    match event {
+                        DesktopPetEvent::StartListeningRequested => {
+                            spawn_start_recording(
+                                &runtime_handle,
+                                vc_clone.clone(),
+                                state_setter_clone.clone(),
+                                pet_handle.clone(),
+                                "desktop pet",
+                            );
+                        }
+                        DesktopPetEvent::StopListeningRequested => {
+                            spawn_stop_recording(
+                                &runtime_handle,
+                                vc_clone.clone(),
+                                state_setter_clone.clone(),
+                                pet_handle.clone(),
+                                "desktop pet",
+                            );
+                        }
+                        DesktopPetEvent::PositionSaveRequested { x, y } => {
+                            config.desktop_pet.position_x = x;
+                            config.desktop_pet.position_y = y;
+                            if let Err(e) = config.save() {
+                                tracing::error!("Failed to save desktop pet position: {}", e);
+                            }
+                        }
+                        DesktopPetEvent::SizeSaveRequested { size } => {
+                            config.desktop_pet.size = size;
+                            if let Err(e) = config.save() {
+                                tracing::error!("Failed to save desktop pet size: {}", e);
+                            }
+                        }
+                        DesktopPetEvent::Petted { count } => {
+                            tracing::debug!("Desktop pet petted {} times", count);
+                        }
+                        DesktopPetEvent::ContextMenuRequested { x, y } => {
+                            tracing::trace!("Desktop pet context menu at ({}, {})", x, y);
+                        }
+                        DesktopPetEvent::HoverChanged { hovered } => {
+                            tracing::trace!("Desktop pet hover changed: {}", hovered);
+                        }
+                        DesktopPetEvent::StateChanged(state) => {
+                            tracing::trace!("Desktop pet state changed: {:?}", state);
                         }
                     }
                 }
@@ -335,12 +439,14 @@ fn load_icon() -> Result<tray_icon::Icon> {
 }
 
 #[cfg(target_os = "windows")]
+#[allow(dead_code)]
 struct RecorderState {
     current_keys: String,
     saved: bool,
 }
 
 #[cfg(target_os = "windows")]
+#[allow(dead_code)]
 fn vk_to_string(vk: u32) -> Option<&'static str> {
     match vk {
         0x41..=0x5A => {
@@ -415,6 +521,7 @@ fn vk_to_string(vk: u32) -> Option<&'static str> {
 }
 
 #[cfg(target_os = "windows")]
+#[allow(dead_code)]
 unsafe extern "system" fn recorder_wnd_proc(
     hwnd: windows::Win32::Foundation::HWND,
     msg: u32,
@@ -584,6 +691,7 @@ unsafe extern "system" fn recorder_wnd_proc(
 }
 
 #[cfg(target_os = "windows")]
+#[allow(dead_code)]
 pub fn run_hotkey_recorder() {
     std::thread::spawn(|| {
         unsafe {

@@ -1,0 +1,25 @@
+{
+  "requiredFiles": [
+    "aiko-ime.exe",
+    "config.toml",
+    "README.md",
+    "RELEASE_NOTES.md",
+    "LICENSE",
+    "VERSION.txt"
+  ],
+  "requiredDirectories": [
+    "assets"
+  ],
+  "requiredWindowClasses": [
+    "AikoFloatingButton",
+    "AikoDesktopPetWindow",
+    "AikoImeSettingsWindow"
+  ],
+  "singleInstanceMarker": "Local\\AikoIME.SingleInstance",
+  "hotkeyStateMarkers": [
+    "target_is_down",
+    "other_key_during_target_press",
+    "last_release",
+    "double_tap_interval"
+  ]
+}

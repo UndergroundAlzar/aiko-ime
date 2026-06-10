@@ -8,8 +8,9 @@ use std::sync::Arc;
 
 use crate::asr::{AsrClient, ResponseType};
 use crate::audio::AudioCapture;
-use crate::business::TextInserter;
+use crate::business::{TextInputError, TextInserter};
 use crate::data::AppConfig;
+use crate::platform::{notify_input_protection, InputTarget};
 
 /// Voice input controller
 pub struct VoiceController {
@@ -21,6 +22,9 @@ pub struct VoiceController {
     /// Net characters this session has typed into the focused window and not yet
     /// committed away. Used by `cancel()` to undo the whole dictation.
     session_chars: Arc<AtomicI64>,
+    session_target: Option<InputTarget>,
+    last_input_error: Arc<std::sync::Mutex<Option<TextInputError>>>,
+    result_task: Option<tokio::task::JoinHandle<()>>,
     config: AppConfig,
 }
 
@@ -39,6 +43,9 @@ impl VoiceController {
             is_recording: Arc::new(AtomicBool::new(false)),
             stop_signal: Arc::new(AtomicBool::new(false)),
             session_chars: Arc::new(AtomicI64::new(0)),
+            session_target: None,
+            last_input_error: Arc::new(std::sync::Mutex::new(None)),
+            result_task: None,
             config,
         }
     }
@@ -46,6 +53,14 @@ impl VoiceController {
     /// Check if currently recording
     pub fn is_recording(&self) -> bool {
         self.is_recording.load(Ordering::SeqCst)
+    }
+
+    /// Return the most recent target-validation or text-injection failure.
+    pub fn last_input_error(&self) -> Option<TextInputError> {
+        self.last_input_error
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone()
     }
 
     /// Toggle voice input on/off
@@ -63,10 +78,31 @@ impl VoiceController {
             return Ok(());
         }
 
+        if let Some(task) = self.result_task.take() {
+            let _ = task.await;
+        }
+
         // Reload configuration from file to get latest settings
         if let Ok(latest_config) = crate::data::AppConfig::load_or_default() {
             self.config = latest_config;
         }
+
+        let input_target = match self.text_inserter.capture_target() {
+            Ok(target) => target,
+            Err(error) => {
+                notify_input_failure(
+                    "无法开始语音输入",
+                    &error,
+                    "请先点击要输入文字的窗口，然后再开始录音。",
+                );
+                return Err(error.into());
+            }
+        };
+        self.session_target = Some(input_target);
+        *self
+            .last_input_error
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
 
         tracing::info!("Starting voice input...");
         self.is_recording.store(true, Ordering::SeqCst);
@@ -80,6 +116,7 @@ impl VoiceController {
             Err(e) => {
                 self.is_recording.store(false, Ordering::SeqCst);
                 self.stop_signal.store(false, Ordering::SeqCst);
+                self.session_target = None;
                 return Err(e);
             }
         };
@@ -93,6 +130,7 @@ impl VoiceController {
                 self.audio_capture.stop();
                 self.is_recording.store(false, Ordering::SeqCst);
                 self.stop_signal.store(false, Ordering::SeqCst);
+                self.session_target = None;
                 return Err(e);
             }
         };
@@ -104,16 +142,17 @@ impl VoiceController {
         let stop_signal = self.stop_signal.clone();
         let audio_capture = self.audio_capture.clone();
         let session_chars = self.session_chars.clone();
+        let last_input_error = self.last_input_error.clone();
         let config = self.config.clone();
 
         // Spawn result processing task
-        tokio::spawn(async move {
+        self.result_task = Some(tokio::spawn(async move {
             let mut last_text = String::new();
             let mut response_count = 0u32;
 
             tracing::info!("ASR result processing task started");
 
-            loop {
+            'results: loop {
                 // Check stop signal
                 if stop_signal.load(Ordering::SeqCst) {
                     tracing::info!(
@@ -146,11 +185,27 @@ impl VoiceController {
                                     // Intercept and format for app-aware profiling
                                     processed_text = format_text_for_app(&processed_text);
 
-                                    match update_text(&text_inserter, &last_text, &processed_text) {
-                                        Ok(delta) => {
-                                            session_chars.fetch_add(delta, Ordering::SeqCst);
+                                    match update_text(
+                                        &text_inserter,
+                                        input_target,
+                                        &last_text,
+                                        &processed_text,
+                                        &session_chars,
+                                    ) {
+                                        Ok(()) => {}
+                                        Err(error) => {
+                                            tracing::error!(
+                                                "Voice input target became unavailable: {}",
+                                                error
+                                            );
+                                            report_input_error(
+                                                &last_input_error,
+                                                "本次语音输入已停止",
+                                                error,
+                                                "录音开始时的目标窗口不再匹配。为避免误输入，Aiko IME 没有继续发送文字。",
+                                            );
+                                            break 'results;
                                         }
-                                        Err(e) => tracing::error!("Failed to update text: {}", e),
                                     }
                                     last_text = processed_text;
                                 }
@@ -160,12 +215,26 @@ impl VoiceController {
                                 println!("✅ [确认] {}", response.text);
                                 if !response.text.is_empty() {
                                     // 1. Clear interim text from screen
-                                    match update_text(&text_inserter, &last_text, "") {
-                                        Ok(delta) => {
-                                            session_chars.fetch_add(delta, Ordering::SeqCst);
-                                        }
-                                        Err(e) => {
-                                            tracing::error!("Failed to clear interim text: {}", e)
+                                    match update_text(
+                                        &text_inserter,
+                                        input_target,
+                                        &last_text,
+                                        "",
+                                        &session_chars,
+                                    ) {
+                                        Ok(()) => {}
+                                        Err(error) => {
+                                            tracing::error!(
+                                                "Failed to clear interim text safely: {}",
+                                                error
+                                            );
+                                            report_input_error(
+                                                &last_input_error,
+                                                "本次语音输入已停止",
+                                                error,
+                                                "清理临时识别文字前发现目标窗口不再匹配，已阻止退格。",
+                                            );
+                                            break 'results;
                                         }
                                     }
                                     last_text = String::new();
@@ -242,17 +311,28 @@ impl VoiceController {
                                     finalized_text = format_text_for_app(&finalized_text);
 
                                     // 4. Voice Command Parsing
-                                    match process_voice_commands(&finalized_text, &text_inserter) {
-                                        Ok((remaining_text, key_delta)) => {
-                                            session_chars.fetch_add(key_delta, Ordering::SeqCst);
+                                    match process_voice_commands(
+                                        &finalized_text,
+                                        &text_inserter,
+                                        input_target,
+                                        &session_chars,
+                                    ) {
+                                        Ok(remaining_text) => {
                                             if !remaining_text.is_empty() {
-                                                if let Err(e) =
-                                                    text_inserter.insert(&remaining_text)
+                                                if let Err(error) = text_inserter
+                                                    .insert_into(input_target, &remaining_text)
                                                 {
                                                     tracing::error!(
                                                         "Failed to insert finalized text: {}",
-                                                        e
+                                                        error
                                                     );
+                                                    report_input_error(
+                                                        &last_input_error,
+                                                        "本次语音输入已停止",
+                                                        error,
+                                                        "插入最终识别文字前发现目标窗口不再匹配，已阻止输入。",
+                                                    );
+                                                    break 'results;
                                                 } else {
                                                     session_chars.fetch_add(
                                                         remaining_text.chars().count() as i64,
@@ -262,25 +342,18 @@ impl VoiceController {
                                                 }
                                             }
                                         }
-                                        Err(e) => {
+                                        Err(error) => {
                                             tracing::error!(
                                                 "Failed to process voice command: {}",
-                                                e
+                                                error
                                             );
-                                            // Fallback: insert raw text
-                                            if let Err(err) = text_inserter.insert(&finalized_text)
-                                            {
-                                                tracing::error!(
-                                                    "Failed to insert finalized text fallback: {}",
-                                                    err
-                                                );
-                                            } else {
-                                                session_chars.fetch_add(
-                                                    finalized_text.chars().count() as i64,
-                                                    Ordering::SeqCst,
-                                                );
-                                                log_dictation_history(&finalized_text, &config);
-                                            }
+                                            report_input_error(
+                                                &last_input_error,
+                                                "本次语音输入已停止",
+                                                error,
+                                                "执行语音命令前发现目标窗口不再匹配，已阻止输入或退格。",
+                                            );
+                                            break 'results;
                                         }
                                     }
                                 }
@@ -321,7 +394,7 @@ impl VoiceController {
             // Cleanup
             audio_capture.stop();
             is_recording.store(false, Ordering::SeqCst);
-        });
+        }));
 
         Ok(())
     }
@@ -338,12 +411,14 @@ impl VoiceController {
         self.stop_signal.store(true, Ordering::SeqCst);
         self.audio_capture.stop();
 
-        // Wait a bit for the task to finish
-        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+        if let Some(task) = self.result_task.take() {
+            let _ = task.await;
+        }
 
         self.is_recording.store(false, Ordering::SeqCst);
         // Text is committed; nothing left for cancel() to undo.
         self.session_chars.store(0, Ordering::SeqCst);
+        self.session_target = None;
 
         Ok(())
     }
@@ -351,7 +426,7 @@ impl VoiceController {
     /// Stop voice input and **discard** everything typed this session (the ✗ / cancel
     /// action). Sends backspaces to remove the dictated text from the focused window.
     pub async fn cancel(&mut self) -> Result<()> {
-        if !self.is_recording() {
+        if !self.is_recording() && self.session_chars.load(Ordering::SeqCst) == 0 {
             return Ok(());
         }
 
@@ -360,20 +435,62 @@ impl VoiceController {
         // Stop producing new text first, then let the result task drain.
         self.stop_signal.store(true, Ordering::SeqCst);
         self.audio_capture.stop();
-        tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+        if let Some(task) = self.result_task.take() {
+            let _ = task.await;
+        }
         self.is_recording.store(false, Ordering::SeqCst);
 
         // Undo whatever this session typed.
-        let n = self.session_chars.swap(0, Ordering::SeqCst);
+        let n = self.session_chars.load(Ordering::SeqCst);
         if n > 0 {
             tracing::info!("Cancel: deleting {} dictated characters", n);
-            if let Err(e) = self.text_inserter.delete_chars(n as usize) {
-                tracing::error!("Failed to delete text on cancel: {}", e);
+            let target = match self.session_target {
+                Some(target) => target,
+                None => {
+                    let message =
+                        "取消操作已停止：录音目标窗口状态已丢失\n\n为避免误删，Aiko IME 没有发送退格。";
+                    notify_input_protection(message);
+                    return Err(anyhow::anyhow!("录音目标窗口状态已丢失，已阻止取消退格"));
+                }
+            };
+            if let Err(error) = self.text_inserter.delete_chars_from(target, n as usize) {
+                report_input_error(
+                    &self.last_input_error,
+                    "取消操作已停止",
+                    error.clone(),
+                    "当前窗口不是录音开始时的目标窗口。为避免误删，Aiko IME 没有发送退格。",
+                );
+                return Err(error.into());
             }
+            self.session_chars.store(0, Ordering::SeqCst);
         }
+        self.session_target = None;
 
         Ok(())
     }
+}
+
+fn store_input_error(
+    destination: &std::sync::Mutex<Option<TextInputError>>,
+    error: TextInputError,
+) {
+    *destination
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(error);
+}
+
+fn report_input_error(
+    destination: &std::sync::Mutex<Option<TextInputError>>,
+    context: &str,
+    error: TextInputError,
+    guidance: &str,
+) {
+    store_input_error(destination, error.clone());
+    notify_input_failure(context, &error, guidance);
+}
+
+fn notify_input_failure(context: &str, error: &TextInputError, guidance: &str) {
+    notify_input_protection(&format!("{context}：{error}\n\n{guidance}"));
 }
 
 /// Update text in the focused window using incremental updates
@@ -385,55 +502,84 @@ impl VoiceController {
 ///
 /// This significantly reduces visual flickering compared to full replacement.
 ///
-/// Returns the net change in on-screen character count (`appended - deleted`),
-/// which the caller accumulates so `cancel()` can undo the whole session.
-fn update_text(text_inserter: &TextInserter, old_text: &str, new_text: &str) -> Result<i64> {
-    // 找到公共前缀长度（无需删除和重新输入的部分）
+/// Updates the session character count after each successful operation so
+/// `cancel()` only undoes text that was actually sent.
+#[derive(Debug, Eq, PartialEq)]
+struct TextEditPlan {
+    chars_to_delete: usize,
+    text_to_append: String,
+}
+
+#[cfg(test)]
+impl TextEditPlan {
+    fn delta(&self) -> i64 {
+        self.text_to_append.chars().count() as i64 - self.chars_to_delete as i64
+    }
+}
+
+fn plan_text_update(old_text: &str, new_text: &str) -> TextEditPlan {
     let common_prefix_len = old_text
         .chars()
         .zip(new_text.chars())
         .take_while(|(a, b)| a == b)
         .count();
 
-    // 计算需要删除的字符数 = 旧文本超出公共前缀的部分
-    let chars_to_delete = old_text.chars().count() - common_prefix_len;
+    TextEditPlan {
+        chars_to_delete: old_text.chars().count() - common_prefix_len,
+        text_to_append: new_text.chars().skip(common_prefix_len).collect(),
+    }
+}
 
-    // 需要追加的文本 = 新文本超出公共前缀的部分
-    let text_to_append: String = new_text.chars().skip(common_prefix_len).collect();
-    let chars_to_append = text_to_append.chars().count();
+fn update_text(
+    text_inserter: &TextInserter,
+    target: InputTarget,
+    old_text: &str,
+    new_text: &str,
+    session_chars: &AtomicI64,
+) -> Result<(), TextInputError> {
+    let plan = plan_text_update(old_text, new_text);
 
     // 执行增量更新
-    if chars_to_delete > 0 {
-        text_inserter.delete_chars(chars_to_delete)?;
+    if plan.chars_to_delete > 0 {
+        text_inserter.delete_chars_from(target, plan.chars_to_delete)?;
+        session_chars.fetch_sub(plan.chars_to_delete as i64, Ordering::SeqCst);
     }
-    if !text_to_append.is_empty() {
-        text_inserter.insert(&text_to_append)?;
+    if !plan.text_to_append.is_empty() {
+        text_inserter.insert_into(target, &plan.text_to_append)?;
+        session_chars.fetch_add(plan.text_to_append.chars().count() as i64, Ordering::SeqCst);
     }
 
     tracing::debug!(
         "Updated text incrementally: '{}' -> '{}' (kept {} chars, deleted {}, appended '{}')",
         old_text,
         new_text,
-        common_prefix_len,
-        chars_to_delete,
-        text_to_append
+        old_text.chars().count() - plan.chars_to_delete,
+        plan.chars_to_delete,
+        plan.text_to_append
     );
-    Ok(chars_to_append as i64 - chars_to_delete as i64)
+    Ok(())
 }
 
-fn process_voice_commands(text: &str, text_inserter: &TextInserter) -> Result<(String, i64)> {
+fn process_voice_commands(
+    text: &str,
+    text_inserter: &TextInserter,
+    target: InputTarget,
+    session_chars: &AtomicI64,
+) -> Result<String, TextInputError> {
     let trimmed = text.trim_matches(|c: char| {
         c.is_whitespace() || c == '。' || c == '，' || c == '.' || c == ','
     });
 
     // Exact command match
     if trimmed == "退格" || trimmed == "删除" {
-        text_inserter.delete_chars(1)?;
-        return Ok((String::new(), -1));
+        text_inserter.delete_chars_from(target, 1)?;
+        session_chars.fetch_sub(1, Ordering::SeqCst);
+        return Ok(String::new());
     }
     if trimmed == "换行" || trimmed == "回车" {
-        text_inserter.press_enter()?;
-        return Ok((String::new(), 1));
+        text_inserter.press_enter_in(target)?;
+        session_chars.fetch_add(1, Ordering::SeqCst);
+        return Ok(String::new());
     }
 
     // Ends with command match
@@ -441,37 +587,45 @@ fn process_voice_commands(text: &str, text_inserter: &TextInserter) -> Result<(S
         let clean_prefix = trimmed[..trimmed.len() - "退格".len()].trim_end_matches(|c: char| {
             c.is_whitespace() || c == '。' || c == '，' || c == '.' || c == ','
         });
-        text_inserter.insert(clean_prefix)?;
-        text_inserter.delete_chars(1)?;
-        return Ok((String::new(), clean_prefix.chars().count() as i64 - 1));
+        text_inserter.insert_into(target, clean_prefix)?;
+        session_chars.fetch_add(clean_prefix.chars().count() as i64, Ordering::SeqCst);
+        text_inserter.delete_chars_from(target, 1)?;
+        session_chars.fetch_sub(1, Ordering::SeqCst);
+        return Ok(String::new());
     }
     if trimmed.ends_with("删除") {
         let clean_prefix = trimmed[..trimmed.len() - "删除".len()].trim_end_matches(|c: char| {
             c.is_whitespace() || c == '。' || c == '，' || c == '.' || c == ','
         });
-        text_inserter.insert(clean_prefix)?;
-        text_inserter.delete_chars(1)?;
-        return Ok((String::new(), clean_prefix.chars().count() as i64 - 1));
+        text_inserter.insert_into(target, clean_prefix)?;
+        session_chars.fetch_add(clean_prefix.chars().count() as i64, Ordering::SeqCst);
+        text_inserter.delete_chars_from(target, 1)?;
+        session_chars.fetch_sub(1, Ordering::SeqCst);
+        return Ok(String::new());
     }
     if trimmed.ends_with("换行") {
         let clean_prefix = trimmed[..trimmed.len() - "换行".len()].trim_end_matches(|c: char| {
             c.is_whitespace() || c == '。' || c == '，' || c == '.' || c == ','
         });
-        text_inserter.insert(clean_prefix)?;
-        text_inserter.press_enter()?;
-        return Ok((String::new(), clean_prefix.chars().count() as i64 + 1));
+        text_inserter.insert_into(target, clean_prefix)?;
+        session_chars.fetch_add(clean_prefix.chars().count() as i64, Ordering::SeqCst);
+        text_inserter.press_enter_in(target)?;
+        session_chars.fetch_add(1, Ordering::SeqCst);
+        return Ok(String::new());
     }
     if trimmed.ends_with("回车") {
         let clean_prefix = trimmed[..trimmed.len() - "回车".len()].trim_end_matches(|c: char| {
             c.is_whitespace() || c == '。' || c == '，' || c == '.' || c == ','
         });
-        text_inserter.insert(clean_prefix)?;
-        text_inserter.press_enter()?;
-        return Ok((String::new(), clean_prefix.chars().count() as i64 + 1));
+        text_inserter.insert_into(target, clean_prefix)?;
+        session_chars.fetch_add(clean_prefix.chars().count() as i64, Ordering::SeqCst);
+        text_inserter.press_enter_in(target)?;
+        session_chars.fetch_add(1, Ordering::SeqCst);
+        return Ok(String::new());
     }
 
     // No command word triggered
-    Ok((text.to_string(), 0))
+    Ok(text.to_string())
 }
 
 fn apply_custom_vocab(text: &str, vocab: &std::collections::HashMap<String, String>) -> String {
@@ -658,5 +812,40 @@ fn format_text_for_app(text: &str) -> String {
         convert_emojis(text)
     } else {
         strip_emojis(text)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{plan_text_update, TextEditPlan};
+
+    #[test]
+    fn update_plan_appends_only_the_new_suffix() {
+        assert_eq!(
+            plan_text_update("Aiko", "Aiko IME"),
+            TextEditPlan {
+                chars_to_delete: 0,
+                text_to_append: " IME".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn update_plan_counts_unicode_characters_not_bytes() {
+        assert_eq!(
+            plan_text_update("你好世界", "你好，Aiko"),
+            TextEditPlan {
+                chars_to_delete: 2,
+                text_to_append: "，Aiko".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn update_plan_can_clear_all_interim_text() {
+        let plan = plan_text_update("语音输入", "");
+        assert_eq!(plan.chars_to_delete, 4);
+        assert!(plan.text_to_append.is_empty());
+        assert_eq!(plan.delta(), -4);
     }
 }

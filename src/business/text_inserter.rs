@@ -4,10 +4,23 @@
 
 use anyhow::Result;
 use std::mem::size_of;
+use thiserror::Error;
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP, KEYEVENTF_UNICODE,
     VIRTUAL_KEY, VK_BACK, VK_RETURN,
 };
+
+use crate::platform::{
+    capture_foreground_target, validate_input_target, InputTarget, InputTargetError,
+};
+
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
+pub enum TextInputError {
+    #[error(transparent)]
+    Target(#[from] InputTargetError),
+    #[error("Windows 文字注入失败: {0}")]
+    Injection(String),
+}
 
 /// Text inserter service using Windows SendInput API
 pub struct TextInserter;
@@ -16,6 +29,36 @@ impl TextInserter {
     /// Create a new text inserter
     pub fn new() -> Self {
         Self
+    }
+
+    /// Capture the exact foreground window that owns this input session.
+    pub fn capture_target(&self) -> Result<InputTarget, TextInputError> {
+        Ok(capture_foreground_target()?)
+    }
+
+    /// Insert text only if the original session target still owns the foreground.
+    pub fn insert_into(&self, target: InputTarget, text: &str) -> Result<(), TextInputError> {
+        validate_input_target(target)?;
+        self.insert(text)
+            .map_err(|error| TextInputError::Injection(error.to_string()))
+    }
+
+    /// Delete text only if the original session target still owns the foreground.
+    pub fn delete_chars_from(
+        &self,
+        target: InputTarget,
+        count: usize,
+    ) -> Result<(), TextInputError> {
+        validate_input_target(target)?;
+        self.delete_chars(count)
+            .map_err(|error| TextInputError::Injection(error.to_string()))
+    }
+
+    /// Press Enter only if the original session target still owns the foreground.
+    pub fn press_enter_in(&self, target: InputTarget) -> Result<(), TextInputError> {
+        validate_input_target(target)?;
+        self.press_enter()
+            .map_err(|error| TextInputError::Injection(error.to_string()))
     }
 
     /// Insert text into the currently focused window
@@ -117,7 +160,11 @@ impl TextInserter {
         let sent = unsafe { SendInput(inputs, size_of::<INPUT>() as i32) };
 
         if sent != inputs.len() as u32 {
-            tracing::warn!("SendInput sent {} of {} inputs", sent, inputs.len());
+            anyhow::bail!(
+                "SendInput sent only {} of {} keyboard events",
+                sent,
+                inputs.len()
+            );
         }
 
         Ok(())

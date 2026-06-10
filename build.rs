@@ -3,6 +3,8 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 fn main() -> Result<()> {
+    use_bundled_protoc_if_available();
+
     // Compile protobuf files
     prost_build::compile_protos(&["proto/asr.proto"], &["proto/"])?;
 
@@ -13,6 +15,29 @@ fn main() -> Result<()> {
     embed_windows_icon();
 
     Ok(())
+}
+
+fn use_bundled_protoc_if_available() {
+    if std::env::var_os("PROTOC").is_some() {
+        return;
+    }
+
+    let manifest_dir = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap_or_default());
+    let bundled = manifest_dir
+        .join("tools")
+        .join("protoc")
+        .join("bin")
+        .join(if cfg!(windows) {
+            "protoc.exe"
+        } else {
+            "protoc"
+        });
+    if bundled.exists() {
+        std::env::set_var("PROTOC", &bundled);
+        println!("cargo:warning=using bundled protoc: {}", bundled.display());
+    }
+    println!("cargo:rerun-if-env-changed=PROTOC");
+    println!("cargo:rerun-if-changed=tools/protoc/bin/protoc.exe");
 }
 
 fn embed_windows_icon() {

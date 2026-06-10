@@ -7,9 +7,11 @@ pub mod asr;
 pub mod audio;
 pub mod business;
 pub mod data;
+pub mod offline;
+pub mod platform;
 pub mod ui;
 
 pub use asr::AsrClient;
 pub use audio::AudioCapture;
-pub use business::{HotkeyManager, TextInserter, VoiceController};
+pub use business::{HotkeyManager, TextInputError, TextInserter, VoiceController};
 pub use data::{AppConfig, CredentialStore};
