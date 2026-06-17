@@ -1,0 +1,157 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aiko.local/live2d/contracts/model3.schema.json",
+  "title": "Aiko Cubism model3 contract",
+  "type": "object",
+  "required": [
+    "Version",
+    "FileReferences",
+    "Groups",
+    "HitAreas"
+  ],
+  "properties": {
+    "Version": {
+      "const": 3
+    },
+    "FileReferences": {
+      "type": "object",
+      "required": [
+        "Moc",
+        "Textures",
+        "Physics",
+        "Motions",
+        "Expressions"
+      ],
+      "properties": {
+        "Moc": {
+          "type": "string",
+          "pattern": "^[^\\\\/:*?\"<>|]+\\.moc3$"
+        },
+        "Textures": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^textures/[a-z0-9_]+\\.png$"
+          }
+        },
+        "Physics": {
+          "type": "string",
+          "pattern": "^[a-z0-9_]+\\.physics3\\.json$"
+        },
+        "Motions": {
+          "type": "object",
+          "minProperties": 7,
+          "additionalProperties": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "required": [
+                "File",
+                "FadeInTime",
+                "FadeOutTime"
+              ],
+              "properties": {
+                "File": {
+                  "type": "string",
+                  "pattern": "^motions/[a-z0-9_]+\\.motion3\\.json$"
+                },
+                "FadeInTime": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "FadeOutTime": {
+                  "type": "number",
+                  "minimum": 0
+                }
+              },
+              "additionalProperties": true
+            }
+          }
+        },
+        "Expressions": {
+          "type": "array",
+          "minItems": 7,
+          "items": {
+            "type": "object",
+            "required": [
+              "Name",
+              "File"
+            ],
+            "properties": {
+              "Name": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]*$"
+              },
+              "File": {
+                "type": "string",
+                "pattern": "^expressions/[a-z0-9_]+\\.exp3\\.json$"
+              }
+            },
+            "additionalProperties": true
+          }
+        }
+      },
+      "additionalProperties": true
+    },
+    "Groups": {
+      "type": "array",
+      "minItems": 2,
+      "items": {
+        "type": "object",
+        "required": [
+          "Target",
+          "Name",
+          "Ids"
+        ],
+        "properties": {
+          "Target": {
+            "const": "Parameter"
+          },
+          "Name": {
+            "enum": [
+              "EyeBlink",
+              "LipSync"
+            ]
+          },
+          "Ids": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "additionalProperties": true
+      }
+    },
+    "HitAreas": {
+      "type": "array",
+      "minItems": 3,
+      "items": {
+        "type": "object",
+        "required": [
+          "Name",
+          "Id"
+        ],
+        "properties": {
+          "Name": {
+            "enum": [
+              "Head",
+              "Mic",
+              "Body"
+            ]
+          },
+          "Id": {
+            "type": "string",
+            "pattern": "^D_Hit_[A-Za-z0-9]+$"
+          }
+        },
+        "additionalProperties": true
+      }
+    }
+  },
+  "additionalProperties": true
+}

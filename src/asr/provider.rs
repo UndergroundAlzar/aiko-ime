@@ -291,6 +291,13 @@ impl ProviderSession {
         self.provider
     }
 
+    /// Clone the audio input sender so a dedicated feeder task can stream
+    /// frames while the session itself is polled for events elsewhere.
+    /// Dropping every clone closes the provider's audio input.
+    pub fn audio_sender(&self) -> Option<mpsc::Sender<AudioFrame>> {
+        self.audio_tx.clone()
+    }
+
     pub async fn send_audio(&self, frame: AudioFrame) -> Result<(), ProviderError> {
         let tx = self.audio_tx.as_ref().ok_or(ProviderError::SessionClosed)?;
         tx.send(frame)

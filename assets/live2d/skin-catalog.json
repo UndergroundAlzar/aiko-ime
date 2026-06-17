@@ -1,0 +1,73 @@
+{
+  "schema_version": 1,
+  "fixed_builtin_only": true,
+  "allow_arbitrary_model_import": false,
+  "skins": [
+    {
+      "config_id": "default",
+      "model_id": "aiko",
+      "display_name_zh": "默认 Aiko",
+      "display_name_en": "Default Aiko",
+      "source_image": "../aiko_art/modeling/aiko_live2d_master_source.png",
+      "cutout_image": "../aiko_art/modeling/aiko_live2d_master_cutout.png",
+      "runtime_entry": "aiko/runtime/aiko.model3.json",
+      "art_status": "flat_reference_ready",
+      "cubism_runtime_status": "missing"
+    },
+    {
+      "config_id": "pajama",
+      "model_id": "aiko_pajama",
+      "display_name_zh": "睡衣版",
+      "display_name_en": "Pajama",
+      "source_image": "../aiko_art/modeling/aiko_pajama_master_source.png",
+      "cutout_image": "../aiko_art/modeling/aiko_pajama_master_cutout.png",
+      "runtime_entry": "aiko_pajama/runtime/aiko_pajama.model3.json",
+      "art_status": "flat_reference_ready",
+      "cubism_runtime_status": "missing"
+    },
+    {
+      "config_id": "rain",
+      "model_id": "aiko_rain",
+      "display_name_zh": "雨天版",
+      "display_name_en": "Rain",
+      "source_image": "../aiko_art/modeling/aiko_rain_master_source.png",
+      "cutout_image": "../aiko_art/modeling/aiko_rain_master_cutout.png",
+      "runtime_entry": "aiko_rain/runtime/aiko_rain.model3.json",
+      "art_status": "flat_reference_ready",
+      "cubism_runtime_status": "missing"
+    },
+    {
+      "config_id": "winter",
+      "model_id": "aiko_winter",
+      "display_name_zh": "冬装版",
+      "display_name_en": "Winter",
+      "source_image": "../aiko_art/modeling/aiko_winter_master_source.png",
+      "cutout_image": "../aiko_art/modeling/aiko_winter_master_cutout.png",
+      "runtime_entry": "aiko_winter/runtime/aiko_winter.model3.json",
+      "art_status": "flat_reference_ready",
+      "cubism_runtime_status": "missing"
+    },
+    {
+      "config_id": "celebration",
+      "model_id": "aiko_celebration",
+      "display_name_zh": "庆祝版",
+      "display_name_en": "Celebration",
+      "source_image": "../aiko_art/modeling/aiko_celebration_master_source.png",
+      "cutout_image": "../aiko_art/modeling/aiko_celebration_master_cutout.png",
+      "runtime_entry": "aiko_celebration/runtime/aiko_celebration.model3.json",
+      "art_status": "flat_reference_ready",
+      "cubism_runtime_status": "missing"
+    },
+    {
+      "config_id": "cag_operator",
+      "model_id": "aiko_cag_operator",
+      "display_name_zh": "CAG 特种作战干员",
+      "display_name_en": "CAG Operator",
+      "source_image": "../aiko_art/modeling/aiko_cag_master_source.png",
+      "cutout_image": "../aiko_art/modeling/aiko_cag_master_cutout.png",
+      "runtime_entry": "aiko_cag/runtime/aiko_cag.model3.json",
+      "art_status": "flat_reference_ready",
+      "cubism_runtime_status": "missing"
+    }
+  ]
+}

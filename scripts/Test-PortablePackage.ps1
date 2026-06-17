@@ -93,6 +93,14 @@ try {
     $sourceAssets = Join-Path $SourceRoot "assets"
     $packageAssets = Join-Path $PackageRoot "assets"
 
+    foreach ($relativePath in $Manifest.requiredPngFallbackAssets) {
+        $fallbackAsset = Join-Path $PackageRoot ([string]$relativePath)
+        Assert-Condition (Test-Path -LiteralPath $fallbackAsset -PathType Leaf) `
+            "Portable package is missing PNG fallback asset: $relativePath"
+        Assert-Condition ((Get-Item -LiteralPath $fallbackAsset).Length -gt 0) `
+            "Portable package contains an empty PNG fallback asset: $relativePath"
+    }
+
     foreach ($sourceAsset in Get-ChildItem -LiteralPath $sourceAssets -File -Recurse) {
         $relative = [IO.Path]::GetRelativePath($sourceAssets, $sourceAsset.FullName)
         $packagedAsset = Join-Path $packageAssets $relative
@@ -102,6 +110,40 @@ try {
         $packageHash = (Get-FileHash -LiteralPath $packagedAsset -Algorithm SHA256).Hash
         Assert-Condition ($sourceHash -eq $packageHash) `
             "Packaged asset differs from source: assets/$($relative.Replace('\', '/'))"
+    }
+
+    $live2dRelative = [string]$Manifest.optionalCubismModelDirectory
+    $live2dManifestPath = Join-Path $SourceRoot "assets\live2d\aiko\asset-manifest.json"
+    $live2dManifest = Get-Content -LiteralPath $live2dManifestPath -Raw | ConvertFrom-Json
+    $runtimeStatus = [string]$live2dManifest.stages.runtime.status
+    $sourceLive2D = Join-Path $SourceRoot "assets\live2d\aiko\runtime"
+    $packageLive2D = Join-Path $PackageRoot $live2dRelative
+
+    if ($runtimeStatus -eq "ready") {
+        $sourceModels = @(
+            Get-ChildItem -LiteralPath $sourceLive2D -Filter "*.model3.json" -File -Recurse
+        )
+        Assert-Condition ($sourceModels.Count -gt 0) `
+            "Live2D runtime stage is ready but contains no model3 descriptor."
+        Assert-Condition (Test-Path -LiteralPath $packageLive2D -PathType Container) `
+            "Portable package is missing the bundled Cubism model directory: $live2dRelative"
+        foreach ($sourceModelFile in Get-ChildItem -LiteralPath $sourceLive2D -File -Recurse) {
+            $relative = [IO.Path]::GetRelativePath($sourceLive2D, $sourceModelFile.FullName)
+            $packagedModelFile = Join-Path $packageLive2D $relative
+            Assert-Condition (Test-Path -LiteralPath $packagedModelFile -PathType Leaf) `
+                "Portable package is missing Cubism model file: $live2dRelative/$($relative.Replace('\', '/'))"
+            $sourceHash = (Get-FileHash -LiteralPath $sourceModelFile.FullName -Algorithm SHA256).Hash
+            $packageHash = (Get-FileHash -LiteralPath $packagedModelFile -Algorithm SHA256).Hash
+            Assert-Condition ($sourceHash -eq $packageHash) `
+                "Packaged Cubism model file differs from source: $live2dRelative/$($relative.Replace('\', '/'))"
+        }
+    }
+    elseif (Test-Path -LiteralPath $packageLive2D -PathType Container) {
+        $packagedModels = @(
+            Get-ChildItem -LiteralPath $packageLive2D -Filter "*.model3.json" -File -Recurse
+        )
+        Assert-Condition ($packagedModels.Count -eq 0) `
+            "Portable package contains a Cubism model while the runtime stage is '$runtimeStatus'."
     }
 
     $readme = Get-Content -LiteralPath (Join-Path $PackageRoot "README.md") -Raw

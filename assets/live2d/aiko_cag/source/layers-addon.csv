@@ -1,0 +1,45 @@
+sort,layer_id,psd_group,png_file,part,side,required,physics,occlusion_role,visual_text,contract_tags,note_zh
+820,combat_shirt_base,20_body/24_tactical_clothes,png/parts/combat_shirt_base.png,clothes,center,true,false,back,,carrier_redraw;sling_redraw,Multicam 作战服主体
+830,combat_shirt_shadow,20_body/24_tactical_clothes,png/parts/combat_shirt_shadow.png,clothes,center,true,false,front,,,作战服阴影
+840,sleeve_l,20_body/24_tactical_clothes,png/parts/sleeve_l.png,clothes,left,true,false,back,,arm_redraw,左袖
+850,sleeve_r,20_body/24_tactical_clothes,png/parts/sleeve_r.png,clothes,right,true,false,back,,arm_redraw,右袖
+920,glove_l,30_arms/33_tactical_hands,png/parts/glove_l.png,hand,left,true,false,front,,full_finger,左手全指技术手套
+930,glove_r,30_arms/33_tactical_hands,png/parts/glove_r.png,hand,right,true,false,front,,full_finger,右手全指技术手套
+940,glove_fingers_l,30_arms/33_tactical_hands,png/parts/glove_fingers_l.png,hand,left,true,false,front,,full_finger;finger_redraw,左手五指独立可变形轮廓
+950,glove_fingers_r,30_arms/33_tactical_hands,png/parts/glove_fingers_r.png,hand,right,true,false,front,,full_finger;finger_redraw,右手五指独立可变形轮廓
+2000,helmet_shell,40_tactical/41_helmet,png/parts/helmet_shell.png,helmet,center,true,false,occluder,,high_cut_helmet,高切防弹盔主体
+2010,helmet_rail_l,40_tactical/41_helmet,png/parts/helmet_rail_l.png,helmet,left,true,false,front,,,左导轨与附件
+2020,helmet_rail_r,40_tactical/41_helmet,png/parts/helmet_rail_r.png,helmet,right,true,false,front,,,右导轨与附件
+2030,helmet_chinstrap,40_tactical/41_helmet,png/parts/helmet_chinstrap.png,helmet,center,true,false,occluder,,chinstrap,下巴固定带
+2040,gpnvg_mount,40_tactical/42_gpnvg,png/parts/gpnvg_mount.png,gpnvg_mount,center,true,false,front,,four_tube;rigid_link,夜视仪底座
+2050,gpnvg_tube_outer_l,40_tactical/42_gpnvg,png/parts/gpnvg_tube_outer_l.png,gpnvg_tube,left,true,false,front,,four_tube;rigid_link,最左独立镜筒
+2060,gpnvg_tube_inner_l,40_tactical/42_gpnvg,png/parts/gpnvg_tube_inner_l.png,gpnvg_tube,left,true,false,front,,four_tube;rigid_link,左中独立镜筒
+2070,gpnvg_tube_inner_r,40_tactical/42_gpnvg,png/parts/gpnvg_tube_inner_r.png,gpnvg_tube,right,true,false,front,,four_tube;rigid_link,右中独立镜筒
+2080,gpnvg_tube_outer_r,40_tactical/42_gpnvg,png/parts/gpnvg_tube_outer_r.png,gpnvg_tube,right,true,false,front,,four_tube;rigid_link,最右独立镜筒
+2090,headset_l,40_tactical/43_comms,png/parts/headset_l.png,headset,left,true,false,occluder,,equipment_comms,左通讯耳机
+2100,headset_r,40_tactical/43_comms,png/parts/headset_r.png,headset,right,true,false,occluder,,equipment_comms,右通讯耳机
+2110,boom_mic,40_tactical/43_comms,png/parts/boom_mic.png,headset,right,true,true,occluder,,equipment_boom_mic;no_icon,实体通讯杆麦不作为图标或贴章
+2200,plate_carrier_base,20_body/25_plate_carrier,png/parts/plate_carrier_base.png,armor,center,true,false,occluder,,carrier_redraw,低轮廓 plate carrier
+2210,plate_carrier_shadow,20_body/25_plate_carrier,png/parts/plate_carrier_shadow.png,armor,center,true,false,front,,,胸挂阴影
+2220,patch_aiko,20_body/25_plate_carrier,png/parts/patch_aiko.png,patch,center,true,false,front,AIKO,chest_patch,AIKO 姓名贴
+2230,patch_b_rh_negative,20_body/25_plate_carrier,png/parts/patch_b_rh_negative.png,patch,center,true,false,front,B RH-,chest_patch,B RH- 血型贴
+2240,magazine_pouches,20_body/25_plate_carrier,png/parts/magazine_pouches.png,pouch,center,true,false,occluder,,carrier_redraw,前方弹匣袋
+2250,radio,20_body/25_plate_carrier,png/parts/radio.png,radio,right,true,false,occluder,,carrier_redraw,无线电
+2260,radio_cable,20_body/25_plate_carrier,png/parts/radio_cable.png,cable,right,true,true,front,,low_amplitude_physics,通讯线低幅度物理
+2270,medical_pouch,20_body/25_plate_carrier,png/parts/medical_pouch.png,pouch,right,true,false,occluder,,carrier_redraw,医疗包
+2280,shoulder_strap_l,20_body/25_plate_carrier,png/parts/shoulder_strap_l.png,strap,left,true,false,occluder,,carrier_redraw,左肩带
+2290,shoulder_strap_r,20_body/25_plate_carrier,png/parts/shoulder_strap_r.png,strap,right,true,false,occluder,,carrier_redraw,右肩带
+2300,battle_belt,20_body/26_battle_belt,png/parts/battle_belt.png,belt,center,true,false,occluder,,belt_redraw,战斗腰带
+2310,belt_pouch_l,20_body/26_battle_belt,png/parts/belt_pouch_l.png,pouch,left,true,true,front,,low_amplitude_physics,左腰包轻微摆动
+2320,belt_pouch_r,20_body/26_battle_belt,png/parts/belt_pouch_r.png,pouch,right,true,true,front,,low_amplitude_physics,右腰包轻微摆动
+2400,rifle_sling_l,40_tactical/44_weapon,png/parts/rifle_sling_l.png,sling,left,true,true,occluder,,chest_slung;muzzle_down;low_amplitude_physics,左侧枪带
+2410,rifle_sling_r,40_tactical/44_weapon,png/parts/rifle_sling_r.png,sling,right,true,true,occluder,,chest_slung;muzzle_down;low_amplitude_physics,右侧枪带
+2420,ks1_rifle,40_tactical/44_weapon,png/parts/ks1_rifle.png,weapon,center,true,true,occluder,,KAC_KS-1;chest_slung;muzzle_down;hands_clear,胸前悬挂且枪口始终朝下
+2430,rifle_shadow,40_tactical/44_weapon,png/parts/rifle_shadow.png,weapon,center,true,false,front,,chest_slung;muzzle_down,步枪对装备投影
+2500,trousers_base,20_body/27_trousers,png/parts/trousers_base.png,clothes,center,true,false,back,,rifle_redraw,Multicam 裤装主体
+2510,leg_l,20_body/27_trousers,png/parts/leg_l.png,leg,left,true,false,back,,rifle_redraw,左腿
+2520,leg_r,20_body/27_trousers,png/parts/leg_r.png,leg,right,true,false,back,,rifle_redraw,右腿
+2530,knee_pad_l,20_body/27_trousers,png/parts/knee_pad_l.png,armor,left,true,false,front,,,左护膝
+2540,knee_pad_r,20_body/27_trousers,png/parts/knee_pad_r.png,armor,right,true,false,front,,,右护膝
+2550,boot_l,20_body/28_boots,png/parts/boot_l.png,boot,left,true,false,front,,,左靴
+2560,boot_r,20_body/28_boots,png/parts/boot_r.png,boot,right,true,false,front,,,右靴

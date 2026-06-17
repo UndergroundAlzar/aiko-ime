@@ -158,6 +158,8 @@ fn portable_layout_contract_requires_runtime_files_and_assets() {
         "config.toml",
         "README.md",
         "RELEASE_NOTES.md",
+        "docs/LIVE2D_MODELING.md",
+        "assets/live2d/aiko/asset-manifest.json",
         "LICENSE",
         "VERSION.txt",
     ] {
@@ -193,6 +195,8 @@ fn ci_quality_gate_runs_format_lint_test_build_package_and_smoke() {
         "cargo fmt --all -- --check",
         "cargo clippy --locked --all-targets --all-features",
         "cargo test --locked --all-targets",
+        "./scripts/Test-CubismBuildMatrix.ps1",
+        "./scripts/Test-Live2DAssets.ps1",
         "cargo build --locked --release --target x86_64-pc-windows-msvc",
         "./scripts/build-portable.ps1 -SkipBuild",
         "./scripts/Test-WindowsSmoke.ps1",
@@ -221,4 +225,50 @@ fn ci_quality_gate_runs_format_lint_test_build_package_and_smoke() {
             "workflow should contain release fragment '{fragment}'"
         );
     }
+}
+
+#[test]
+fn cubism_release_contract_covers_assets_builds_portable_and_fallbacks() {
+    let workflow = read_repository_file(".github/workflows/build.yml");
+    let build_matrix = read_repository_file("scripts/Test-CubismBuildMatrix.ps1");
+    let portable_builder = read_repository_file("scripts/build-portable.ps1");
+    let portable_validator = read_repository_file("scripts/Test-PortablePackage.ps1");
+    let layout = read_repository_file("tests/portable-layout.json");
+
+    for fragment in [
+        "CUBISM_SDK_ROOT",
+        "--no-default-features",
+        "--features",
+        "cubism_renderer_falls_back_without_a_model",
+    ] {
+        assert!(
+            build_matrix.contains(fragment),
+            "Cubism build matrix should contain '{fragment}'"
+        );
+    }
+
+    for fragment in [
+        "assets\\live2d\\aiko\\runtime",
+        "stages.runtime.status",
+        "Copy-Item -LiteralPath $Live2DModelSource",
+    ] {
+        assert!(
+            portable_builder.contains(fragment),
+            "portable builder should contain '{fragment}'"
+        );
+    }
+
+    for fragment in [
+        "requiredPngFallbackAssets",
+        "optionalCubismModelDirectory",
+        "Packaged Cubism model file differs from source",
+    ] {
+        assert!(
+            portable_validator.contains(fragment) || layout.contains(fragment),
+            "portable contract should contain '{fragment}'"
+        );
+    }
+
+    assert!(workflow.contains("./scripts/Test-CubismBuildMatrix.ps1"));
+    assert!(workflow.contains("./scripts/Test-Live2DAssets.ps1"));
 }

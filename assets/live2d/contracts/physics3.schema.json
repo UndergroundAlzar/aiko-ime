@@ -1,0 +1,93 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aiko.local/live2d/contracts/physics3.schema.json",
+  "title": "Aiko Cubism physics3 contract",
+  "type": "object",
+  "required": [
+    "Version",
+    "Meta",
+    "PhysicsSettings"
+  ],
+  "properties": {
+    "Version": {
+      "const": 3
+    },
+    "Meta": {
+      "type": "object",
+      "required": [
+        "PhysicsSettingCount",
+        "TotalInputCount",
+        "TotalOutputCount",
+        "VertexCount",
+        "EffectiveForces"
+      ],
+      "properties": {
+        "PhysicsSettingCount": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "TotalInputCount": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "TotalOutputCount": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "VertexCount": {
+          "type": "integer",
+          "minimum": 2
+        },
+        "EffectiveForces": {
+          "type": "object",
+          "required": [
+            "Gravity",
+            "Wind"
+          ]
+        }
+      },
+      "additionalProperties": true
+    },
+    "PhysicsSettings": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "Id",
+          "Input",
+          "Output",
+          "Vertices",
+          "Normalization"
+        ],
+        "properties": {
+          "Id": {
+            "type": "string",
+            "pattern": "^Physics[A-Za-z0-9_]+$"
+          },
+          "Input": {
+            "type": "array",
+            "minItems": 1
+          },
+          "Output": {
+            "type": "array",
+            "minItems": 1
+          },
+          "Vertices": {
+            "type": "array",
+            "minItems": 2
+          },
+          "Normalization": {
+            "type": "object",
+            "required": [
+              "Position",
+              "Angle"
+            ]
+          }
+        },
+        "additionalProperties": true
+      }
+    }
+  },
+  "additionalProperties": true
+}

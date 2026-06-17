@@ -1,0 +1,9 @@
+name,file,fade_in_sec,fade_out_sec,required,uses_icon,patch_visibility,purpose_zh
+neutral,expressions/neutral.exp3.json,0.3,0.3,true,false,clear,默认表情
+listening,expressions/listening.exp3.json,0.15,0.2,true,false,clear,倾听专注且不显示麦克风图标
+focused,expressions/focused.exp3.json,0.15,0.2,true,false,clear,任务专注
+success,expressions/success.exp3.json,0.1,0.3,true,false,clear,成功笑脸
+error,expressions/error.exp3.json,0.1,0.35,true,false,clear,错误沮丧表情
+petted,expressions/petted.exp3.json,0.08,0.25,true,false,clear,摸头开心表情
+sleepy,expressions/sleepy.exp3.json,0.4,0.25,true,false,clear,困倦闭眼表情
+determined,expressions/determined.exp3.json,0.12,0.25,false,false,clear,坚定表情

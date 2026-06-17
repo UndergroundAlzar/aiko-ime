@@ -5,6 +5,7 @@
 use anyhow::{anyhow, Result};
 use futures_util::{SinkExt, StreamExt};
 use std::net::SocketAddr;
+use std::sync::OnceLock;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::net::{lookup_host, TcpStream};
 use tokio::sync::mpsc;
@@ -29,6 +30,20 @@ const WS_TCP_ATTEMPT_TIMEOUT: Duration = Duration::from_secs(4);
 const WS_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(5);
 const WS_HOST: &str = "frontier-audio-ime-ws.doubao.com";
 const WS_PORT: u16 = 443;
+const AI_API_TIMEOUT: Duration = Duration::from_secs(25);
+
+/// Shared HTTP client with sane timeouts so a dead network can never hang the
+/// app indefinitely (device registration, token fetch, AI post-processing).
+pub(crate) fn http_client() -> &'static reqwest::Client {
+    static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
+    CLIENT.get_or_init(|| {
+        reqwest::Client::builder()
+            .connect_timeout(Duration::from_secs(10))
+            .timeout(Duration::from_secs(30))
+            .build()
+            .unwrap_or_default()
+    })
+}
 
 /// ASR Client for real-time speech recognition
 pub struct AsrClient {
@@ -49,25 +64,14 @@ impl AsrClient {
         )
     }
 
-    /// Start real-time ASR session
-    ///
-    /// Returns a receiver for ASR responses
-    pub async fn start_realtime(
-        &self,
-        mut audio_rx: mpsc::Receiver<Vec<u8>>,
-    ) -> Result<mpsc::Receiver<AsrResponse>> {
-        let url = self.ws_url();
-        let request_id = Uuid::new_v4().to_string();
-        let token = self.credentials.token.clone();
-        let device_id = self.credentials.device_id.clone();
-
-        // Build request with headers
+    /// Build the WebSocket upgrade request with the protocol headers.
+    fn ws_request(&self) -> Result<tokio_tungstenite::tungstenite::http::Request<()>> {
         let request = tokio_tungstenite::tungstenite::http::Request::builder()
-            .uri(&url)
+            .uri(self.ws_url())
             .header("User-Agent", USER_AGENT)
             .header("proto-version", "v2")
             .header("x-custom-keepalive", "true")
-            .header("Host", "frontier-audio-ime-ws.doubao.com")
+            .header("Host", WS_HOST)
             .header("Connection", "Upgrade")
             .header("Upgrade", "websocket")
             .header("Sec-WebSocket-Version", "13")
@@ -76,8 +80,22 @@ impl AsrClient {
                 tokio_tungstenite::tungstenite::handshake::client::generate_key(),
             )
             .body(())?;
+        Ok(request)
+    }
 
-        tracing::info!("Connecting to ASR WebSocket: {}", url);
+    /// Start real-time ASR session
+    ///
+    /// Returns a receiver for ASR responses
+    pub async fn start_realtime(
+        &self,
+        mut audio_rx: mpsc::Receiver<Vec<u8>>,
+    ) -> Result<mpsc::Receiver<AsrResponse>> {
+        let request_id = Uuid::new_v4().to_string();
+        let token = self.credentials.token.clone();
+        let device_id = self.credentials.device_id.clone();
+        let request = self.ws_request()?;
+
+        tracing::info!("Connecting to ASR WebSocket: {}", self.ws_url());
         let (ws_stream, _) = timeout(WS_CONNECT_TIMEOUT, connect_websocket_ipv4_first(request))
             .await
             .map_err(|_| {
@@ -151,55 +169,74 @@ impl AsrClient {
             None => return Err(anyhow!("ASR WebSocket closed before SessionStarted")),
         }
 
-        // Spawn audio sending task
+        // Spawn audio sending task. Frames are sent with a one-frame lookahead
+        // so the genuinely final audio frame can be flagged `FrameState::Last`
+        // instead of appending a fabricated empty frame.
         tracing::info!("Starting audio frame sender task");
         tokio::spawn(async move {
             let mut frame_index = 0u64;
             let start_time = current_time_ms();
+            let mut pending: Option<Vec<u8>> = None;
 
-            // Process audio frames until channel is closed
             while let Some(opus_frame) = audio_rx.recv().await {
+                if let Some(previous) = pending.replace(opus_frame) {
+                    let frame_state = if frame_index == 0 {
+                        FrameState::First
+                    } else {
+                        FrameState::Middle
+                    };
+                    let timestamp_ms = start_time + frame_index * FRAME_DURATION_MS as u64;
+                    let msg =
+                        build_task_request(&request_id_clone, previous, frame_state, timestamp_ms);
+                    if write.send(Message::Binary(msg)).await.is_err() {
+                        tracing::warn!("Failed to send audio frame {}", frame_index);
+                        pending = None;
+                        break;
+                    }
+                    frame_index += 1;
+
+                    // Log every 250 frames (about 5 seconds)
+                    if frame_index % 250 == 0 {
+                        tracing::debug!(
+                            "Sent {} audio frames ({:.1}s)",
+                            frame_index,
+                            frame_index as f64 * 0.02
+                        );
+                    }
+                }
+            }
+
+            // The capture channel closed: flush the held-back frame as Last.
+            if let Some(final_frame) = pending.take() {
                 let frame_state = if frame_index == 0 {
+                    // A single-frame session still needs a First before Last.
                     FrameState::First
                 } else {
-                    FrameState::Middle
+                    FrameState::Last
                 };
-
                 let timestamp_ms = start_time + frame_index * FRAME_DURATION_MS as u64;
                 let msg =
-                    build_task_request(&request_id_clone, opus_frame, frame_state, timestamp_ms);
-
-                if write.send(Message::Binary(msg)).await.is_err() {
-                    tracing::warn!("Failed to send audio frame {}", frame_index);
-                    break;
-                }
-
+                    build_task_request(&request_id_clone, final_frame, frame_state, timestamp_ms);
+                let _ = write.send(Message::Binary(msg)).await;
                 frame_index += 1;
 
-                // Log every 50 frames (about 1 second)
-                if frame_index % 50 == 0 {
-                    tracing::info!(
-                        "Sent {} audio frames ({:.1}s)",
-                        frame_index,
-                        frame_index as f64 * 0.02
+                if frame_state == FrameState::First {
+                    // Close the single-frame edge case with a silent Last frame.
+                    let timestamp_ms = start_time + frame_index * FRAME_DURATION_MS as u64;
+                    let msg = build_task_request(
+                        &request_id_clone,
+                        vec![0u8; 100],
+                        FrameState::Last,
+                        timestamp_ms,
                     );
+                    let _ = write.send(Message::Binary(msg)).await;
+                    frame_index += 1;
                 }
             }
 
             tracing::info!("Audio channel closed, sent {} total frames", frame_index);
 
-            // Send last frame to signal end
             if frame_index > 0 {
-                let timestamp_ms = start_time + frame_index * FRAME_DURATION_MS as u64;
-                let silent_frame = vec![0u8; 100];
-                let msg = build_task_request(
-                    &request_id_clone,
-                    silent_frame,
-                    FrameState::Last,
-                    timestamp_ms,
-                );
-                let _ = write.send(Message::Binary(msg)).await;
-
                 // Send FinishSession
                 let finish_msg = build_finish_session(&request_id_clone, &token_clone);
                 let _ = write.send(Message::Binary(finish_msg)).await;
@@ -210,26 +247,60 @@ impl AsrClient {
         // Spawn response receiving task
         let result_tx_clone = result_tx.clone();
         tokio::spawn(async move {
-            while let Some(Ok(msg)) = read.next().await {
-                if let Message::Binary(data) = msg {
-                    let response = parse_response(&data);
+            let mut session_done = false;
+            loop {
+                match read.next().await {
+                    Some(Ok(Message::Binary(data))) => {
+                        let response = parse_response(&data);
 
-                    match response.response_type {
-                        ResponseType::Error | ResponseType::SessionFinished => {
-                            let _ = result_tx_clone.send(response).await;
-                            break;
-                        }
-                        ResponseType::Heartbeat => {
-                            // Ignore heartbeats
-                            continue;
-                        }
-                        _ => {
-                            if result_tx_clone.send(response).await.is_err() {
+                        match response.response_type {
+                            ResponseType::Error | ResponseType::SessionFinished => {
+                                session_done = true;
+                                let _ = result_tx_clone.send(response).await;
                                 break;
+                            }
+                            ResponseType::Heartbeat => {
+                                // Ignore heartbeats
+                                continue;
+                            }
+                            _ => {
+                                if result_tx_clone.send(response).await.is_err() {
+                                    break;
+                                }
                             }
                         }
                     }
+                    Some(Ok(Message::Close(frame))) => {
+                        tracing::info!("ASR WebSocket closed by server: {:?}", frame);
+                        break;
+                    }
+                    Some(Ok(_)) => continue,
+                    Some(Err(e)) => {
+                        tracing::error!("ASR WebSocket read error: {}", e);
+                        let _ = result_tx_clone
+                            .send(AsrResponse {
+                                response_type: ResponseType::Error,
+                                error_msg: format!("连接错误 / connection error: {e}"),
+                                ..Default::default()
+                            })
+                            .await;
+                        break;
+                    }
+                    None => break,
                 }
+            }
+
+            // A drop without SessionFinished means results may be incomplete:
+            // surface it instead of ending the session silently.
+            if !session_done {
+                let _ = result_tx_clone
+                    .send(AsrResponse {
+                        response_type: ResponseType::Error,
+                        error_msg: "ASR 连接在会话结束前断开 / connection dropped before the session finished"
+                            .to_string(),
+                        ..Default::default()
+                    })
+                    .await;
             }
         });
 
@@ -238,22 +309,7 @@ impl AsrClient {
 
     /// Verify that the ASR WebSocket endpoint is reachable without consuming an ASR session.
     pub async fn test_connection(&self) -> Result<()> {
-        let url = self.ws_url();
-        let request = tokio_tungstenite::tungstenite::http::Request::builder()
-            .uri(&url)
-            .header("User-Agent", USER_AGENT)
-            .header("proto-version", "v2")
-            .header("x-custom-keepalive", "true")
-            .header("Host", WS_HOST)
-            .header("Connection", "Upgrade")
-            .header("Upgrade", "websocket")
-            .header("Sec-WebSocket-Version", "13")
-            .header(
-                "Sec-WebSocket-Key",
-                tokio_tungstenite::tungstenite::handshake::client::generate_key(),
-            )
-            .body(())?;
-
+        let request = self.ws_request()?;
         let (ws_stream, _) = timeout(WS_CONNECT_TIMEOUT, connect_websocket_ipv4_first(request))
             .await
             .map_err(|_| {
@@ -274,7 +330,6 @@ impl AsrClient {
         system_prompt: &str,
         user_content: &str,
     ) -> Result<String> {
-        let client = reqwest::Client::new();
         let url = if endpoint.ends_with('/') {
             format!("{}chat/completions", endpoint)
         } else {
@@ -296,10 +351,11 @@ impl AsrClient {
             "temperature": 0.3
         });
 
-        let response = client
+        let response = http_client()
             .post(&url)
             .header("Authorization", format!("Bearer {}", api_key))
             .header("Content-Type", "application/json")
+            .timeout(AI_API_TIMEOUT)
             .json(&body)
             .send()
             .await?;
@@ -383,6 +439,6 @@ async fn connect_websocket_ipv4_first(
 fn current_time_ms() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .unwrap()
+        .unwrap_or_default()
         .as_millis() as u64
 }

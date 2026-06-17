@@ -4,12 +4,24 @@
     "config.toml",
     "README.md",
     "RELEASE_NOTES.md",
+    "docs/LIVE2D_MODELING.md",
+    "assets/live2d/aiko/asset-manifest.json",
     "LICENSE",
     "VERSION.txt"
   ],
   "requiredDirectories": [
     "assets"
   ],
+  "requiredPngFallbackAssets": [
+    "assets/aiko_desktop_pet.png",
+    "assets/mascot/states/aiko_listening.png",
+    "assets/mascot/states/aiko_processing.png",
+    "assets/mascot/states/aiko_success.png",
+    "assets/mascot/states/aiko_error.png",
+    "assets/mascot/states/aiko_petted.png",
+    "assets/mascot/states/aiko_sleepy.png"
+  ],
+  "optionalCubismModelDirectory": "models/live2d",
   "requiredWindowClasses": [
     "AikoFloatingButton",
     "AikoDesktopPetWindow",

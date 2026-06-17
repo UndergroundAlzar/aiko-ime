@@ -36,7 +36,7 @@ async fn main() -> Result<()> {
 
 /// Run in full UI mode with system tray and hotkeys
 async fn run_ui_mode() -> Result<()> {
-    init_logging(false);
+    let _log_guard = init_logging(false);
 
     info!("Starting AikoIME v{} (UI Mode)", env!("CARGO_PKG_VERSION"));
 
@@ -96,7 +96,7 @@ async fn run_ui_mode() -> Result<()> {
 
 /// Run in CLI mode for testing
 async fn run_cli_mode() -> Result<()> {
-    init_logging(true);
+    let _log_guard = init_logging(true);
 
     println!("╔═══════════════════════════════════════════════════════════╗");
     println!(
@@ -283,17 +283,45 @@ async fn run_cli_mode() -> Result<()> {
     Ok(())
 }
 
-fn init_logging(debug: bool) {
+/// Initialize logging to stdout and to a rolling log file next to the
+/// executable. Release builds use `windows_subsystem = "windows"`, so stdout
+/// is invisible there — the file is the only way to diagnose issues in the
+/// field. Returns the appender guard which must stay alive for the duration
+/// of the process.
+fn init_logging(debug: bool) -> Option<tracing_appender::non_blocking::WorkerGuard> {
     let level = if debug {
-        "aiko_ime=debug,doubao_voice_input=debug"
+        "aiko_ime=debug"
     } else {
-        "aiko_ime=info,doubao_voice_input=info"
+        "aiko_ime=info"
     };
+    let filter =
+        tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| level.into());
 
-    tracing_subscriber::registry()
-        .with(
-            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| level.into()),
-        )
-        .with(tracing_subscriber::fmt::layer())
-        .init();
+    let log_dir = env::current_exe()
+        .ok()
+        .and_then(|path| path.parent().map(std::path::Path::to_path_buf));
+
+    match log_dir {
+        Some(dir) => {
+            let appender = tracing_appender::rolling::daily(dir, "aiko-ime.log");
+            let (writer, guard) = tracing_appender::non_blocking(appender);
+            tracing_subscriber::registry()
+                .with(filter)
+                .with(
+                    tracing_subscriber::fmt::layer()
+                        .with_ansi(false)
+                        .with_writer(writer),
+                )
+                .with(tracing_subscriber::fmt::layer())
+                .init();
+            Some(guard)
+        }
+        None => {
+            tracing_subscriber::registry()
+                .with(filter)
+                .with(tracing_subscriber::fmt::layer())
+                .init();
+            None
+        }
+    }
 }

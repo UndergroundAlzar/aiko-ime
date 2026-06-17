@@ -67,6 +67,8 @@ if ($Clean) {
     }
 }
 
+& "$PSScriptRoot\Test-Live2DAssets.ps1" -SourceRoot $RepositoryRoot
+
 if (-not $SkipBuild) {
     Write-Host "Building Aiko IME v$Version release..."
     $previousRustFlags = $env:RUSTFLAGS
@@ -98,8 +100,20 @@ Copy-Item -LiteralPath $ExePath -Destination (Join-Path $PortableDir "aiko-ime.e
 Copy-Item -LiteralPath "config.toml.example" -Destination (Join-Path $PortableDir "config.toml")
 Copy-Item -LiteralPath "README.md" -Destination $PortableDir
 Copy-Item -LiteralPath "RELEASE_NOTES.md" -Destination $PortableDir
+New-Item -ItemType Directory -Force -Path (Join-Path $PortableDir "docs") | Out-Null
+Copy-Item -LiteralPath "docs\LIVE2D_MODELING.md" -Destination (Join-Path $PortableDir "docs")
 Copy-Item -LiteralPath "LICENSE" -Destination $PortableDir
 Copy-Item -LiteralPath "assets" -Destination $PortableDir -Recurse
+$Live2DManifestPath = Join-Path $RepositoryRoot "assets\live2d\aiko\asset-manifest.json"
+$Live2DManifest = Get-Content -LiteralPath $Live2DManifestPath -Raw | ConvertFrom-Json
+$Live2DRuntimeStatus = [string]$Live2DManifest.stages.runtime.status
+$Live2DModelSource = Join-Path $RepositoryRoot "assets\live2d\aiko\runtime"
+if ($Live2DRuntimeStatus -eq "ready") {
+    $ModelDestination = Join-Path $PortableDir "models"
+    New-Item -ItemType Directory -Force -Path $ModelDestination | Out-Null
+    Copy-Item -LiteralPath $Live2DModelSource -Destination (Join-Path $ModelDestination "live2d") `
+        -Recurse
+}
 [IO.File]::WriteAllText((Join-Path $PortableDir "VERSION.txt"), "v$Version`r`n")
 
 & "$PSScriptRoot\Test-PortablePackage.ps1" -PackagePath $PortableDir

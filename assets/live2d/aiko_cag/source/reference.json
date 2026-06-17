@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "canvas": {
+    "width": 1024,
+    "height": 1536,
+    "coordinate_origin": "top_left",
+    "layer_exports_preserve_full_canvas": true
+  },
+  "master": {
+    "path": "../../../aiko_art/modeling/aiko_cag_master_source.png",
+    "sha256": "80a3e3d7fa9cc74a7f1813e25ac43eedbe612295989035f77d934128687e0f15",
+    "png_color_type": 2,
+    "role": "flat_rgb_concept_master"
+  },
+  "cutout": {
+    "path": "../../../aiko_art/modeling/aiko_cag_master_cutout.png",
+    "sha256": "e15a4113cde6dc3480ec52ddc869d230f0783a71fea02f326d886709ff4f8203",
+    "png_color_type": 6,
+    "role": "transparent_rgba_reference"
+  },
+  "expression_sheet": {
+    "path": "../../../aiko_art/modeling/aiko_cag_expression_sheet.png",
+    "width": 1448,
+    "height": 1086,
+    "sha256": "810b1eaa7ced399fa416851ebc9a7477410309b880b856dd912eef712e26e258",
+    "png_color_type": 2,
+    "role": "expression_and_mouth_reference"
+  },
+  "motion_sheet": {
+    "path": "../../../aiko_art/modeling/aiko_cag_motion_sheet.png",
+    "width": 1581,
+    "height": 995,
+    "sha256": "15cc71e444ff965a81b54e4ec568aea774fc18306c5db2467cbdf69811958450",
+    "png_color_type": 2,
+    "role": "full_body_motion_and_sling_reference"
+  },
+  "parts_reference": {
+    "path": "../../../aiko_art/modeling/aiko_cag_parts_reference.png",
+    "width": 1536,
+    "height": 1024,
+    "sha256": "5282877af5dc6fd179514603122dff5e51d88ef6cd6b6d8693b56968de43fc80",
+    "png_color_type": 2,
+    "role": "layer_separation_reference"
+  }
+}

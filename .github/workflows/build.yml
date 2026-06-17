@@ -63,6 +63,14 @@ jobs:
       - name: Run all tests
         run: cargo test --locked --all-targets
 
+      - name: Verify Cubism feature builds and fallbacks
+        shell: pwsh
+        run: ./scripts/Test-CubismBuildMatrix.ps1
+
+      - name: Validate Live2D and Cubism assets
+        shell: pwsh
+        run: ./scripts/Test-Live2DAssets.ps1
+
       - name: Build release binary
         shell: pwsh
         run: |

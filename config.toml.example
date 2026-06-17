@@ -10,6 +10,10 @@ language = "zh-CN"
 history_log_enabled = false
 # 历史文件路径 / History file path
 history_log_path = "dictation_history.jsonl"
+# 在聊天软件中把"笑脸"等口述关键词转成 emoji（默认关闭，简单替换可能误伤普通词语）
+# Convert spoken keywords like "笑脸" into emoji in messengers (off by default;
+# plain substring replacement can also rewrite ordinary words)
+emoji_conversion_enabled = false
 
 [audio]
 # 留空使用 Windows 默认麦克风 / Empty uses the Windows default microphone
@@ -44,6 +48,25 @@ position_x = -1
 position_y = -1
 # 桌宠尺寸，单位像素 / Desktop pet size in pixels
 size = 160
+# 首选渲染器: "cubism" 或 "png" / Preferred renderer: "cubism" or "png"
+# Cubism 模型缺失或不可用时会安全回退到内置 PNG
+# Missing or unavailable Cubism models safely fall back to the bundled PNG
+renderer = "cubism"
+# 固定内置皮肤：default、pajama、rain、winter、celebration、cag_operator
+# Fixed built-in skin: default, pajama, rain, winter, celebration, or cag_operator
+skin = "default"
+# Live2D 模型目录，需直接包含 *.model3.json / Live2D model directory containing *.model3.json
+live2d_model_dir = "models/live2d"
+# 目标帧率，范围 10-120 FPS / Target frame rate, 10-120 FPS
+target_fps = 30
+# 空闲时降低刷新率以节省电量 / Reduce refresh rate while idle to save power
+power_saving = true
+# 视线跟随鼠标 / Follow the mouse cursor with model gaze
+mouse_gaze_enabled = true
+# 启用点击或触摸反馈 / Enable click or touch reactions
+touch_enabled = true
+# 启用 Live2D 动作播放 / Enable Live2D motion playback
+motion_enabled = true
 
 [asr]
 # 识别后端: "online" 或 "offline" / Recognition backend: "online" or "offline"

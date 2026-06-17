@@ -59,7 +59,7 @@ impl HotkeyManager {
                 // For modifier keys like Ctrl, we use low-level keyboard hook
                 // For regular keys, we can use global_hotkey
                 let key_lower = config.double_tap_key.to_lowercase();
-                if key_lower == "ctrl" || key_lower == "shift" || key_lower == "alt" {
+                if is_hooked_double_tap_key(&key_lower) {
                     // Will use Windows keyboard hook for modifier keys
                     tracing::info!(
                         "Double-tap modifier key: {} (using keyboard hook)",
@@ -98,8 +98,8 @@ impl HotkeyManager {
 
         // Check if we need to use keyboard hook for modifier keys
         let key_lower = double_tap_key.to_lowercase();
-        let use_keyboard_hook = mode == HotkeyMode::DoubleTap
-            && (key_lower == "ctrl" || key_lower == "shift" || key_lower == "alt");
+        let use_keyboard_hook =
+            mode == HotkeyMode::DoubleTap && is_hooked_double_tap_key(&key_lower);
 
         if use_keyboard_hook {
             // Use Windows keyboard hook for modifier key double-tap
@@ -165,6 +165,12 @@ impl HotkeyManager {
     }
 }
 
+/// Keys whose double-tap detection requires the low-level keyboard hook
+/// (modifier and lock keys that `global_hotkey` cannot register).
+fn is_hooked_double_tap_key(key_lower: &str) -> bool {
+    matches!(key_lower, "ctrl" | "shift" | "alt" | "capslock")
+}
+
 /// Windows keyboard hook for modifier key double-tap detection
 #[cfg(target_os = "windows")]
 fn run_modifier_double_tap_hook<F>(
@@ -178,7 +184,7 @@ fn run_modifier_double_tap_hook<F>(
     use std::cell::RefCell;
     use windows::Win32::Foundation::{LPARAM, LRESULT, WPARAM};
     use windows::Win32::UI::Input::KeyboardAndMouse::{
-        VK_CONTROL, VK_LCONTROL, VK_LMENU, VK_LSHIFT, VK_RCONTROL, VK_RMENU, VK_RSHIFT,
+        VK_CAPITAL, VK_CONTROL, VK_LCONTROL, VK_LMENU, VK_LSHIFT, VK_RCONTROL, VK_RMENU, VK_RSHIFT,
     };
     use windows::Win32::UI::WindowsAndMessaging::{
         CallNextHookEx, DispatchMessageW, GetMessageW, SetWindowsHookExW, UnhookWindowsHookEx,
@@ -191,6 +197,7 @@ fn run_modifier_double_tap_hook<F>(
         "ctrl" => vec![VK_CONTROL.0, VK_LCONTROL.0, VK_RCONTROL.0],
         "shift" => vec![VK_LSHIFT.0, VK_RSHIFT.0],
         "alt" => vec![VK_LMENU.0, VK_RMENU.0],
+        "capslock" => vec![VK_CAPITAL.0],
         _ => vec![],
     };
 

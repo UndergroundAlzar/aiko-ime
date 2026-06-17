@@ -50,11 +50,28 @@ pub enum DesktopPetCommand {
 pub enum DesktopPetEvent {
     StartListeningRequested,
     StopListeningRequested,
-    ContextMenuRequested { x: i32, y: i32 },
-    PositionSaveRequested { x: i32, y: i32 },
-    SizeSaveRequested { size: i32 },
-    HoverChanged { hovered: bool },
-    Petted { count: u32 },
+    ContextMenuRequested {
+        x: i32,
+        y: i32,
+    },
+    PositionSaveRequested {
+        x: i32,
+        y: i32,
+    },
+    SizeSaveRequested {
+        size: i32,
+    },
+    /// Visibility toggled from the pet's own context menu; lets the tray and
+    /// config stay in sync with this second source of truth.
+    VisibilityChanged {
+        visible: bool,
+    },
+    HoverChanged {
+        hovered: bool,
+    },
+    Petted {
+        count: u32,
+    },
     StateChanged(PetState),
 }
 
@@ -326,6 +343,14 @@ fn run_windows_pet(
         } else {
             config.initial_y
         };
+        // A saved position can point at a monitor that is no longer attached;
+        // clamp into the current virtual desktop so the pet stays reachable.
+        let virtual_x = GetSystemMetrics(SM_XVIRTUALSCREEN);
+        let virtual_y = GetSystemMetrics(SM_YVIRTUALSCREEN);
+        let virtual_w = GetSystemMetrics(SM_CXVIRTUALSCREEN).max(size);
+        let virtual_h = GetSystemMetrics(SM_CYVIRTUALSCREEN).max(size);
+        let x = x.clamp(virtual_x, virtual_x + virtual_w - size);
+        let y = y.clamp(virtual_y, virtual_y + virtual_h - size);
 
         let state_ptr = state.as_mut() as *mut PetWindowState;
         let hwnd = CreateWindowExW(
@@ -878,6 +903,9 @@ unsafe fn show_pet_context_menu(
             } else {
                 let _ = ShowWindow(hwnd, SW_HIDE);
             }
+            let _ = state.event_tx.send(DesktopPetEvent::VisibilityChanged {
+                visible: state.visible,
+            });
         }
         PET_CONTEXT_SIZE_128 => resize_pet_window(hwnd, state, 128),
         PET_CONTEXT_SIZE_192 => resize_pet_window(hwnd, state, 192),

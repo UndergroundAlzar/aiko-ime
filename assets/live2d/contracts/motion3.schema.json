@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aiko.local/live2d/contracts/motion3.schema.json",
+  "title": "Aiko Cubism motion3 contract",
+  "type": "object",
+  "required": [
+    "Version",
+    "Meta",
+    "Curves"
+  ],
+  "properties": {
+    "Version": {
+      "const": 3
+    },
+    "Meta": {
+      "type": "object",
+      "required": [
+        "Duration",
+        "Fps",
+        "Loop",
+        "CurveCount",
+        "TotalSegmentCount",
+        "TotalPointCount"
+      ],
+      "properties": {
+        "Duration": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "Fps": {
+          "type": "number",
+          "minimum": 24
+        },
+        "Loop": {
+          "type": "boolean"
+        },
+        "CurveCount": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "TotalSegmentCount": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "TotalPointCount": {
+          "type": "integer",
+          "minimum": 2
+        }
+      },
+      "additionalProperties": true
+    },
+    "Curves": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "Target",
+          "Id",
+          "Segments"
+        ],
+        "properties": {
+          "Target": {
+            "enum": [
+              "Model",
+              "Parameter",
+              "PartOpacity"
+            ]
+          },
+          "Id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "Segments": {
+            "type": "array",
+            "minItems": 4,
+            "items": {
+              "type": "number"
+            }
+          }
+        },
+        "additionalProperties": true
+      }
+    }
+  },
+  "additionalProperties": true
+}

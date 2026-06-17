@@ -1,0 +1,10 @@
+group,name,file,fade_in_sec,fade_out_sec,loop,trigger,return_state,required,hand_pose,weapon_pose,gpnvg_pose,acceptance_zh
+idle,idle_01,motions/idle_01.motion3.json,0.5,0.5,true,state_idle,idle,true,hands_clear,chest_slung_muzzle_down,up,自然呼吸且枪体仅低幅度惯性
+listening,listening_loop,motions/listening_loop.motion3.json,0.2,0.2,true,state_listening,listening,true,hands_clear,chest_slung_muzzle_down,up,仅用眼神和轻微前倾表达倾听
+processing,processing_loop,motions/processing_loop.motion3.json,0.15,0.2,true,state_processing,processing,true,hands_clear,chest_slung_muzzle_down,up,不得出现麦克风图标
+success,success_01,motions/success_01.motion3.json,0.1,0.35,false,state_success,idle,true,thumbs_up_clear,chest_slung_muzzle_down,up,点赞手不接触枪械或枪带
+error,error_01,motions/error_01.motion3.json,0.1,0.4,false,state_error,idle,true,hands_clear,chest_slung_muzzle_down,up,收肩但不挤压胸贴
+petted,petted_01,motions/petted_01.motion3.json,0.08,0.2,false,hit_head,previous,true,hands_clear,chest_slung_muzzle_down,up,头部反馈不得让头盔穿过头发
+sleepy,sleepy_loop,motions/sleepy_loop.motion3.json,0.6,0.3,true,state_sleepy,sleepy,true,hands_clear,chest_slung_muzzle_down,up,身体下沉时枪口仍朝下
+wave,wave_01,motions/wave_01.motion3.json,0.12,0.25,false,command_wave,previous,true,wave_clear,chest_slung_muzzle_down,up,挥手侧手臂避开枪带
+gear_check,gpnvg_check_01,motions/gpnvg_check_01.motion3.json,0.15,0.2,false,command_gear_check,previous,false,hands_clear,chest_slung_muzzle_down,down_then_up,四镜筒刚性同步下放后回到上翻

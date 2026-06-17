@@ -1,0 +1,146 @@
+{
+  "schema_version": 1,
+  "model_id": "aiko",
+  "workspace_layout_version": 1,
+  "canvas": {
+    "width": 1024,
+    "height": 1536,
+    "color_mode": "RGB",
+    "bits_per_channel": 8,
+    "background": "transparent"
+  },
+  "references": [
+    {
+      "id": "master_source",
+      "source": "assets/aiko_art/modeling/aiko_live2d_master_source.png",
+      "destination": "references/aiko_live2d_master_source.png",
+      "sha256": "2fff964269254e0f1c9e309b7137b387b24d0a5685604314dd947887b0aa645c",
+      "width": 1024,
+      "height": 1536,
+      "purpose_zh": "正面母版与造型、配色参考；不是分层 PSD。",
+      "purpose_en": "Front master for design and color reference; not a layered PSD."
+    },
+    {
+      "id": "master_cutout",
+      "source": "assets/aiko_art/modeling/aiko_live2d_master_cutout.png",
+      "destination": "references/aiko_live2d_master_cutout.png",
+      "sha256": "1e70aaa7713df32030b11bd0acc337330b84c630018715c81a1a5cd3d2d3e3a2",
+      "width": 1024,
+      "height": 1536,
+      "purpose_zh": "透明背景轮廓参考；不是可直接绑定的分层文件。",
+      "purpose_en": "Transparent silhouette reference; not a bind-ready layered file."
+    },
+    {
+      "id": "expression_sheet",
+      "source": "assets/aiko_art/modeling/aiko_expression_sheet.png",
+      "destination": "references/aiko_expression_sheet.png",
+      "sha256": "25732c5ea73852c9acd4d12f2d48cec5bdcf54dfc42a8a38e6f0376e3e7b1812",
+      "width": 1448,
+      "height": 1086,
+      "purpose_zh": "表情、眼眉与口型参考。",
+      "purpose_en": "Expression, eye, brow, and mouth-shape reference."
+    },
+    {
+      "id": "head_angle_sheet",
+      "source": "assets/aiko_art/modeling/aiko_head_angle_sheet.png",
+      "destination": "references/aiko_head_angle_sheet.png",
+      "sha256": "44d0186b77280f5fa1d42dc35546a47b5d0549da6083c37659952d9eae05d58f",
+      "width": 1254,
+      "height": 1254,
+      "purpose_zh": "头部 X/Y 角度与五官透视参考。",
+      "purpose_en": "Head X/Y angle and facial perspective reference."
+    },
+    {
+      "id": "motion_sheet",
+      "source": "assets/aiko_art/modeling/aiko_motion_sheet.png",
+      "destination": "references/aiko_motion_sheet.png",
+      "sha256": "e344fb11bc490dedf4a0a452d594232e2078488811ba9cdb6148504dbad33ab7",
+      "width": 1536,
+      "height": 1024,
+      "purpose_zh": "待机、倾听、处理、成功、错误、摸头和困倦动作参考。",
+      "purpose_en": "Motion reference for idle, listening, processing, success, error, petting, and sleepy states."
+    }
+  ],
+  "contracts": [
+    {
+      "source": "assets/live2d/aiko/source/layers.csv",
+      "destination": "contracts/layers.csv"
+    },
+    {
+      "source": "assets/live2d/aiko/source/parameters.csv",
+      "destination": "contracts/parameters.csv"
+    },
+    {
+      "source": "assets/live2d/aiko/source/hit-areas.csv",
+      "destination": "contracts/hit-areas.csv"
+    },
+    {
+      "source": "assets/live2d/aiko/source/motions.csv",
+      "destination": "contracts/motions.csv"
+    },
+    {
+      "source": "assets/live2d/aiko/source/expressions.csv",
+      "destination": "contracts/expressions.csv"
+    }
+  ],
+  "workspace_directories": [
+    "references",
+    "contracts",
+    "handoff/source/png/parts",
+    "handoff/ready",
+    "handoff/runtime",
+    "review"
+  ],
+  "deliverables": {
+    "layered_source": {
+      "producer": "artist_or_modeler",
+      "required_files": [
+        "handoff/source/aiko_master.psd",
+        "handoff/source/png/parts/*.png"
+      ],
+      "editor_review_required": true
+    },
+    "cubism_project": {
+      "producer": "Live2D Cubism Editor",
+      "required_files": [
+        "handoff/ready/aiko.cmo3"
+      ],
+      "editor_review_required": true
+    },
+    "runtime_export": {
+      "producer": "Live2D Cubism Editor SDK export",
+      "required_files": [
+        "handoff/runtime/aiko.model3.json",
+        "handoff/runtime/aiko.moc3",
+        "handoff/runtime/textures/*.png"
+      ],
+      "editor_review_required": true
+    }
+  },
+  "automation_limits": {
+    "creates_layered_psd": false,
+    "creates_cmo3": false,
+    "creates_moc3": false,
+    "creates_model3": false,
+    "performs_art_separation": false,
+    "performs_rigging": false,
+    "certifies_cubism_authenticity": false
+  },
+  "cubism_editor_required_steps": [
+    "import_and_review_layered_psd",
+    "create_artmeshes_and_deformers",
+    "bind_parameters_and_draw_order",
+    "configure_clipping_hit_areas_and_physics",
+    "author_expressions_and_motions",
+    "inspect_extreme_angles_and_occlusion_redraw",
+    "save_editable_cmo3",
+    "export_sdk_runtime",
+    "load_test_export_in_target_renderer"
+  ],
+  "placeholder_policy": {
+    "allow_empty_or_renamed_psd": false,
+    "allow_fake_cmo3": false,
+    "allow_fake_moc3": false,
+    "allow_handwritten_model3_as_editor_export": false
+  }
+}

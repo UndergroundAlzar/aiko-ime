@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "model_id": "aiko",
+  "display_name": "Aiko",
+  "runtime_entry": "runtime/aiko.model3.json",
+  "stages": {
+    "source": {
+      "status": "spec_only",
+      "root": "source",
+      "required_when_ready": [
+        "source/aiko_master.psd",
+        "source/layers.csv",
+        "source/parameters.csv",
+        "source/hit-areas.csv",
+        "source/motions.csv",
+        "source/expressions.csv"
+      ]
+    },
+    "ready": {
+      "status": "missing",
+      "root": "ready",
+      "required_when_ready": [
+        "ready/aiko.cmo3"
+      ]
+    },
+    "runtime": {
+      "status": "missing",
+      "root": "runtime",
+      "required_when_ready": [
+        "runtime/aiko.model3.json"
+      ]
+    }
+  },
+  "contracts": {
+    "model3": "contracts/model3.schema.json",
+    "motion3": "contracts/motion3.schema.json",
+    "expression3": "contracts/expression3.schema.json",
+    "physics3": "contracts/physics3.schema.json"
+  },
+  "placeholder_policy": {
+    "allow_fake_moc3": false,
+    "allow_fake_cmo3": false,
+    "allow_unreferenced_runtime_files": false
+  }
+}

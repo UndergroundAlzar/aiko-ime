@@ -14,6 +14,10 @@ This project is inspired by and derived from [EvanDbg/doubao-ime-win](https://gi
 >
 > Status: beta / experimental. The current ASR provider uses an unofficial Doubao voice-input protocol and may stop working if the upstream service or protocol changes.
 
+> Cubism 状态：当前 v1.6.0 发布包提供的是 PNG 状态精灵和轻量动画，并未捆绑可直接发布的真正 Cubism 模型。`cubism-live2d` Cargo feature 目前提供 Core 动态加载、模型发现/校验和命令解析基础；最终 Native Framework 渲染适配器及 Aiko runtime 模型尚未完成，因此当前桌宠仍使用 PNG。
+>
+> Cubism status: the current v1.6.0 package ships PNG state sprites and lightweight animation, not a release-ready genuine Cubism model. The `cubism-live2d` Cargo feature currently provides Core dynamic loading, model discovery/validation, and command resolution foundations. The final Native Framework renderer adapter and Aiko runtime model are not complete, so the desktop pet still uses PNG rendering.
+
 ## 功能 / Features
 
 - 全局触发：默认双击 `Ctrl` 开始或结束语音输入，也支持配置组合热键。
@@ -22,8 +26,8 @@ This project is inspired by and derived from [EvanDbg/doubao-ime-win](https://gi
   Floating control: a small topmost HUD with recording waveform, confirm, and cancel controls.
 - 系统托盘：可从托盘菜单开始、停止、打开设置或退出。
   System tray: start, stop, settings, and quit from the tray menu.
-- Aiko 桌宠：可从托盘菜单显示或隐藏桌面小 Aiko，并支持轻量 Live2D 风格的状态动画与抚摸反馈。
-  Aiko desktop pet: show or hide the small desktop companion from the tray menu, with lightweight Live2D-style state animation and petting feedback.
+- Aiko 桌宠：可从托盘菜单显示或隐藏桌面小 Aiko；当前稳定路径使用 PNG 状态精灵实现轻量 Live2D 风格动画与抚摸反馈。
+  Aiko desktop pet: show or hide the small desktop companion from the tray menu. The current stable path uses PNG state sprites for lightweight Live2D-style animation and petting feedback.
 - 文本输入：识别结果会通过 Windows 原生输入事件插入到当前应用。
   Text insertion: recognized text is inserted into the active app using native Windows input events.
 - 便携使用：发布版可以打包为包含 `aiko-ime.exe` 和 `config.toml` 的便携目录。
@@ -31,7 +35,52 @@ This project is inspired by and derived from [EvanDbg/doubao-ime-win](https://gi
 - 可选 AI 后处理：配置中保留了 OpenAI 兼容接口的后处理和翻译字段。
   Optional AI post-processing: configuration fields are present for OpenAI-compatible post-processing and translation.
 
+## 更多 Aiko / More Aiko
+
+![Aiko skin concepts](assets/aiko_art/skins/aiko_skin_catalog_v2.png)
+
+当前美术库包含默认 Aiko 的正面建模母版、12 种表情与口型、头部角度表、动作表，
+以及居家、雨天、冬装、庆祝和 CAG Operator 固定皮肤方案。
+
+The art library now includes a front-facing modeling master, 12 expression and
+mouth references, head-angle and motion sheets, plus fixed Cozy, Rain, Winter,
+Festive, and CAG Operator skin concepts.
+
+CAG Operator 版使用现代 Multicam、高切盔、四筒 GPNVG、全指手套和低轮廓
+plate carrier。步枪通过枪带固定在胸前、枪口朝下，胸贴固定为 `AIKO / B RH-`；
+不使用麦克风贴章或背景麦克风标志。
+
+The CAG Operator skin uses modern Multicam equipment, a high-cut helmet,
+four-tube GPNVG, full-finger gloves, and a low-profile plate carrier. Its rifle
+is retained against the chest by a sling with the muzzle down, the chest patches
+are fixed to `AIKO / B RH-`, and no microphone patch or background microphone
+symbol is used.
+
+完整美术目录和生成规范见 [`assets/aiko_art`](assets/aiko_art/README.md)。这些图片是
+Cubism 建模参考，不是伪造的 `.moc3`。
+
+See [`assets/aiko_art`](assets/aiko_art/README.md) for the complete art catalog
+and generation notes. These images are Cubism modeling references, not fake
+`.moc3` files.
+
 ## 版本亮点 / Version Highlights
+
+### v1.6 可靠性与识别质量 / v1.6 Reliability And Recognition Quality
+
+- 离线识别接入主流程：`asr.backend = "offline"` 会真正构建 sherpa-onnx provider 并走 PCM 通路；feature/DLL/模型缺失时弹窗说明并自动回退在线识别。
+  Offline recognition is wired into the dictation flow: `asr.backend = "offline"` builds the sherpa-onnx provider over a PCM path, with an explained automatic fallback to online recognition when the feature build, DLL, or model is missing.
+- 设置中选择的麦克风现已生效；找不到时回退系统默认。
+  The microphone chosen in settings is now honored, falling back to the system default when missing.
+- 重采样改为均值抽取 + 线性插值，Opus 改用 VOIP 模式 24kbps；移除会截断安静句首的硬噪声门。
+  Resampling now uses averaging plus linear interpolation, Opus runs in VOIP mode at 24kbps, and the onset-chopping hard noise gate is gone.
+- 注册/token/AI 请求带超时；WebSocket 错误与会话中断会上报；真实尾帧标记 `Last`。
+  Registration, token, and AI requests carry timeouts; WebSocket errors and mid-session disconnects surface as errors; the genuine final audio frame is flagged `Last`.
+- 确认停止会等待最终识别结果，取消会中断识别并撤回本次输入；音频采集线程加 generation 保护，快速切换/回退时不会把旧帧送进新会话。
+  Confirm-stop waits for final recognition, while cancel interrupts recognition and removes text typed in the current session. Audio capture now uses generation guards so stale frames cannot leak into a new session during quick restarts or fallback.
+- 修复退出卡顿、配置保存竞态（原子写入）、桌宠卡"倾听"状态、桌宠菜单与托盘状态不同步、多显示器位置越界等问题；双击 CapsLock 可用。
+  Fixed the delayed quit, config save races (atomic writes), the pet sticking in "listening", pet-menu/tray desync, and off-screen restores on multi-monitor; double-tap CapsLock now works.
+- UI 模式日志写入 exe 旁的 `aiko-ime.log.*` 滚动文件，release 版问题可排查。
+  UI-mode logs now go to rolling `aiko-ime.log.*` files next to the executable, making release builds diagnosable.
 
 ### v1.5 发布与质量门禁 / v1.5 Release And Quality Gates
 
@@ -45,6 +94,8 @@ This project is inspired by and derived from [EvanDbg/doubao-ime-win](https://gi
   The portable package contract requires `aiko-ime.exe`, `config.toml`, the complete `assets/` tree, `LICENSE`, `README.md`, `RELEASE_NOTES.md`, and `VERSION.txt`.
 - 新增仓库契约测试，覆盖双语发布文档、资源可解码性、配置模板、CI 步骤和 portable 布局。
   Repository contract tests cover bilingual release documentation, decodable assets, the config template, CI steps, and the portable layout.
+- 这里的“Live2D 风格”指 PNG 精灵动画，不代表 v1.5.0 已包含真正 Cubism 模型或 Cubism SDK。
+  Here, "Live2D-style" means PNG sprite animation; v1.5.0 does not include a genuine Cubism model or the Cubism SDK.
 
 ### v1.4 离线识别基础 / v1.4 Offline Recognition Foundation
 
@@ -99,6 +150,21 @@ The floating window can be dragged. Its position is saved in `config.toml`.
 
 The desktop pet can be controlled from the tray menu item `显示/隐藏桌宠`, or configured as enabled/disabled by default.
 
+### Cubism 与 PNG 回退 / Cubism And PNG Fallback
+
+当前仓库把可用的 PNG 路径与尚在建设的 Cubism 集成基础明确分开：
+
+The repository clearly separates the usable PNG path from the Cubism integration foundation still under construction:
+
+- **PNG fallback**：仓库和当前 portable 包已包含，可在没有 Cubism SDK、runtime 或模型时工作。
+  **PNG fallback:** included in the repository and current portable package; works without the Cubism SDK, runtime, or model.
+- **Cubism 运行时基础 / Cubism runtime foundation**：实验性、feature-gated，覆盖 Core 动态加载、模型发现/校验和状态命令解析，但尚未完成桌宠窗口的 Native Framework 渲染适配。
+  **Cubism runtime foundation:** experimental and feature-gated. It covers Core dynamic loading, model discovery/validation, and state-command resolution, but the Native Framework rendering adapter for the desktop-pet window is not complete.
+- **真正 Cubism 交付 / Genuine Cubism delivery**：还需要合法的 `*.model3.json`、`.moc3`、纹理、motion/expression/physics 文件、兼容 SDK/runtime，以及完成并验证的渲染适配器。
+  **Genuine Cubism delivery:** still requires valid `*.model3.json`, `.moc3`, textures, motion/expression/physics files, a compatible SDK/runtime, and a completed, verified rendering adapter.
+- 仓库中的制作与验收契约位于 `assets/live2d`；当前 runtime 阶段明确标记为 `missing`，没有伪造 `.moc3`。未来通过严格检查的 runtime 导出包才会在 portable 中映射到 `models/live2d`。
+  The production and acceptance contract lives under `assets/live2d`. Its runtime stage is explicitly marked `missing`, with no fake `.moc3`. A future runtime export that passes strict validation will be mapped to `models/live2d` in the portable package.
+
 ## 配置 / Configuration
 
 从源码运行时，可以把 `config.toml.example` 复制为 `config.toml`；使用便携版时，直接编辑可执行文件旁边生成的 `config.toml`。
@@ -122,7 +188,14 @@ enabled = true
 position_x = -1
 position_y = -1
 size = 160
+renderer = "cubism"
+live2d_model_dir = "models/live2d"
+target_fps = 30
 ```
+
+`renderer = "cubism"` 是面向后续集成的偏好配置，不代表当前已启用真正 Cubism 渲染。当前缺少 runtime 模型或最终渲染适配时，桌宠使用 PNG fallback。可显式设置 `renderer = "png"` 固定使用 PNG。
+
+`renderer = "cubism"` is a preference for the continuing integration; it does not mean genuine Cubism rendering is currently active. The desktop pet uses PNG fallback while the runtime model or final renderer adapter is unavailable. Set `renderer = "png"` to force PNG rendering.
 
 如果想使用组合键，而不是双击 `Ctrl`：
 
@@ -155,6 +228,16 @@ $env:PROTOC = "C:\path\to\protoc.exe"
 cargo build --release
 ```
 
+构建实验性 Cubism 运行时基础 / Build the experimental Cubism runtime foundation:
+
+```powershell
+cargo build --release --features cubism-live2d
+```
+
+这只启用 Core/模型加载与命令解析基础，并不会生成或捆绑模型，也不会附带 Live2D Cubism SDK，更不代表桌宠渲染适配已经完成。当前应用仍使用 PNG fallback。
+
+This enables the Core/model-loading and command-resolution foundation only. It does not create or bundle a model, redistribute the Live2D Cubism SDK, or imply that the desktop-pet rendering adapter is complete. The current application still uses PNG fallback.
+
 打包便携版 / Portable package:
 
 ```powershell
@@ -167,6 +250,10 @@ $env:PROTOC = "C:\path\to\protoc.exe"
 
 The portable package is written to `dist\aiko-ime-portable`, with the archive and
 SHA-256 checksum at `dist\aiko-ime-v<version>-portable.zip*`.
+
+`.omc/`, `target/`, the local `dist/` workspace, and the source-tree `config.toml` are local
+build/runtime state. GitHub Releases should publish only the validated portable ZIP and checksum,
+not those working directories or local config files.
 
 ## 项目结构 / Architecture
 
@@ -204,9 +291,9 @@ The current backend implements an unofficial Doubao voice-input protocol. This i
 - 不建议把当前 ASR 后端用于关键生产工作流。
   Do not rely on this provider for critical production workflows.
 
-仓库已经包含实验性的 `sherpa-onnx` 离线识别基础设施，包括 provider 契约、模型发现和运行库探测。默认便携版仍使用在线 Doubao 后端；离线模式需要额外的 feature 构建、DLL 和模型包。
+仓库包含 `sherpa-onnx` 离线识别支持：provider 契约、模型发现、运行库探测已经接入语音控制器，`asr.backend = "offline"` 时会优先尝试离线识别。默认便携版不带 `sherpa-onnx` feature、运行库 DLL 和模型包，此时应用会提示原因并自动回退在线 Doubao 后端。
 
-The repository includes experimental `sherpa-onnx` offline recognition infrastructure, including the provider contract, model discovery, and runtime probing. The default portable build still uses the online Doubao backend; offline mode requires an additional feature build, DLLs, and a model package.
+The repository includes `sherpa-onnx` offline recognition support. The provider contract, model discovery, and runtime probing are wired into the voice controller, and `asr.backend = "offline"` attempts offline recognition first. The default portable build ships without the `sherpa-onnx` feature, runtime DLLs, and model package; in that case the app explains why and falls back to the online Doubao backend automatically.
 
 ## 测试与质量门禁 / Testing And Quality Gates
 
@@ -219,6 +306,8 @@ $env:PROTOC = "C:\path\to\protoc.exe"
 cargo fmt --all -- --check
 cargo clippy --locked --all-targets --all-features
 cargo test --locked --all-targets
+.\scripts\Test-CubismBuildMatrix.ps1
+.\scripts\Test-Live2DAssets.ps1
 cargo build --locked --release --target x86_64-pc-windows-msvc
 .\scripts\build-portable.ps1 -SkipBuild
 $version = (Select-String Cargo.toml '^version\s*=\s*"([^"]+)"$').Matches[0].Groups[1].Value
@@ -234,6 +323,10 @@ The Windows smoke test does not contact Doubao, capture a real microphone, or ty
 into the active window. It validates the release EXE, the single-instance contract,
 hotkey state markers, Win32 window classes, and the complete packaged asset tree.
 
+`Test-CubismBuildMatrix.ps1` 会自动发现 Cubism/Live2D Cargo feature，清除常见 SDK 路径环境变量，并验证默认构建、feature 构建和缺模型回退。`Test-Live2DAssets.ps1` 验证模型资产契约；没有真正模型时，PNG fallback 仍是合法且受测试覆盖的发布状态。
+
+`Test-CubismBuildMatrix.ps1` discovers the Cubism/Live2D Cargo feature, clears common SDK path variables, and verifies the default build, feature build, and missing-model fallback. `Test-Live2DAssets.ps1` validates the model asset contract; when no genuine model is present, PNG fallback remains a valid and tested release state.
+
 对于较新的 CMake 版本，仓库在 `.cargo/config.toml` 中设置了 `CMAKE_POLICY_VERSION_MINIMUM=3.5`，用于保持内置 Opus 依赖可构建。
 
 For recent CMake versions, the repository sets `CMAKE_POLICY_VERSION_MINIMUM=3.5` in `.cargo/config.toml` to keep the bundled Opus dependency buildable.
@@ -248,10 +341,16 @@ For recent CMake versions, the repository sets `CMAKE_POLICY_VERSION_MINIMUM=3.5
    Create and push a `v<version>` tag. GitHub Actions reruns every check.
 4. CI 只发布通过结构校验的便携 ZIP 和 SHA-256 文件。ZIP 包含
    `aiko-ime.exe`、`config.toml`、`README.md`、`RELEASE_NOTES.md`、`LICENSE`、
-   `VERSION.txt` 以及完整的嵌套 `assets/` 目录。
+   `VERSION.txt`、`docs/LIVE2D_MODELING.md` 以及完整的嵌套 `assets/` 目录；
+   只有 `assets/live2d/aiko/runtime` 被标记为 `ready` 且通过严格检查时才附带
+   `models/live2d`。
+   `.omc/`、`target/`、本地 `dist/` 工作区和源码树 `config.toml` 不作为 GitHub
+   或 Release 附件发布。
    CI publishes only a validated portable ZIP and SHA-256 file. The ZIP contains
    `aiko-ime.exe`, `config.toml`, `README.md`, `RELEASE_NOTES.md`, `LICENSE`,
-   `VERSION.txt`, and the complete nested `assets/` tree.
+   `VERSION.txt`, `docs/LIVE2D_MODELING.md`, and the complete nested `assets/` tree.
+   It includes `models/live2d` only when `assets/live2d/aiko/runtime` is marked
+   `ready` and passes strict validation.
 
 ## 致谢 / Credits
 

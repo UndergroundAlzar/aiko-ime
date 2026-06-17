@@ -1,0 +1,59 @@
+{
+  "schema_version": 2,
+  "model_id": "aiko_cag",
+  "display_name": "Aiko CAG Operator",
+  "runtime_entry": "runtime/aiko_cag.model3.json",
+  "stages": {
+    "source": {
+      "status": "concept_only",
+      "root": "source",
+      "reference": "../../aiko_art/modeling/aiko_cag_master_source.png",
+      "contract_files": [
+        "source/reference.json",
+        "source/layers.csv",
+        "source/layers-addon.csv",
+        "source/parameters.csv",
+        "source/motions.csv",
+        "source/expressions.csv",
+        "source/occlusion-redraw.csv"
+      ],
+      "required_when_ready": [
+        "source/aiko_cag_master.psd"
+      ]
+    },
+    "ready": {
+      "status": "missing",
+      "root": "ready",
+      "required_when_ready": [
+        "ready/aiko_cag.cmo3"
+      ]
+    },
+    "runtime": {
+      "status": "missing",
+      "root": "runtime",
+      "required_when_ready": [
+        "runtime/aiko_cag.model3.json"
+      ]
+    }
+  },
+  "invariants": {
+    "gpnvg_tube_count": 4,
+    "glove_coverage": "full_finger",
+    "weapon_model": "KAC KS-1",
+    "weapon_carry": "chest_slung",
+    "weapon_muzzle": "down",
+    "chest_patches": [
+      "AIKO",
+      "B RH-"
+    ],
+    "allow_equipment_boom_mic": true,
+    "allow_microphone_icon_or_patch": false
+  },
+  "fixed_builtin_model": true,
+  "allow_arbitrary_model_import": false,
+  "placeholder_policy": {
+    "allow_fake_moc3": false,
+    "allow_fake_cmo3": false,
+    "allow_handwritten_model3": false
+  }
+}

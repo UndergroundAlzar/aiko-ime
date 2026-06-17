@@ -11,6 +11,17 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 const DEFAULT_HISTORY_FILE: &str = "dictation_history.jsonl";
+const DESKTOP_PET_RENDERER_CUBISM: &str = "cubism";
+const DESKTOP_PET_RENDERER_PNG: &str = "png";
+const DEFAULT_DESKTOP_PET_SKIN: &str = "default";
+const DESKTOP_PET_SKINS: &[&str] = &[
+    DEFAULT_DESKTOP_PET_SKIN,
+    "pajama",
+    "rain",
+    "winter",
+    "celebration",
+    "cag_operator",
+];
 
 /// Application configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -82,11 +93,17 @@ impl AppConfig {
     }
 
     /// Validate and save the configuration.
+    ///
+    /// The file is written to a temporary sibling first and then renamed so a
+    /// crash mid-write can never leave a truncated `config.toml` behind.
     pub fn save(&self) -> Result<()> {
         self.validate()?;
         let path = Self::config_path();
         let content = toml::to_string_pretty(self)?;
-        fs::write(&path, content)
+        let temp_path = path.with_extension("toml.tmp");
+        fs::write(&temp_path, content)
+            .with_context(|| format!("failed to save configuration: {}", temp_path.display()))?;
+        fs::rename(&temp_path, &path)
             .with_context(|| format!("failed to save configuration: {}", path.display()))
     }
 
@@ -115,6 +132,30 @@ impl AppConfig {
         }
         if !(96..=320).contains(&self.desktop_pet.size) {
             bail!("desktop pet size must be between 96 and 320 pixels");
+        }
+        if !matches!(
+            self.desktop_pet.renderer.as_str(),
+            DESKTOP_PET_RENDERER_CUBISM | DESKTOP_PET_RENDERER_PNG
+        ) {
+            bail!(
+                "桌宠渲染器必须为 'cubism' 或 'png' / Desktop pet renderer must be 'cubism' or 'png'"
+            );
+        }
+        if !DESKTOP_PET_SKINS.contains(&self.desktop_pet.skin.as_str()) {
+            bail!(
+                "桌宠皮肤无效 / Invalid desktop pet skin: {}",
+                self.desktop_pet.skin
+            );
+        }
+        if self.desktop_pet.renderer == DESKTOP_PET_RENDERER_CUBISM
+            && self.desktop_pet.live2d_model_dir.trim().is_empty()
+        {
+            bail!("Live2D 模型目录不能为空 / Live2D model directory cannot be empty");
+        }
+        if !(10..=120).contains(&self.desktop_pet.target_fps) {
+            bail!(
+                "桌宠帧率必须在 10 到 120 FPS 之间 / Desktop pet frame rate must be between 10 and 120 FPS"
+            );
         }
         if !(20.0..=500.0).contains(&self.floating_button.stiffness)
             || !(1.0..=80.0).contains(&self.floating_button.damping)
@@ -191,6 +232,22 @@ impl AppConfig {
         self.hotkey.double_tap_interval = self.hotkey.double_tap_interval.clamp(100, 2_000);
 
         self.desktop_pet.size = self.desktop_pet.size.clamp(96, 320);
+        self.desktop_pet.renderer = self.desktop_pet.renderer.trim().to_ascii_lowercase();
+        if !matches!(
+            self.desktop_pet.renderer.as_str(),
+            DESKTOP_PET_RENDERER_CUBISM | DESKTOP_PET_RENDERER_PNG
+        ) {
+            self.desktop_pet.renderer = default_desktop_pet_renderer();
+        }
+        self.desktop_pet.skin = self.desktop_pet.skin.trim().to_ascii_lowercase();
+        if !DESKTOP_PET_SKINS.contains(&self.desktop_pet.skin.as_str()) {
+            self.desktop_pet.skin = default_desktop_pet_skin();
+        }
+        self.desktop_pet.live2d_model_dir = non_empty_or(
+            &self.desktop_pet.live2d_model_dir,
+            &default_live2d_model_dir(),
+        );
+        self.desktop_pet.target_fps = self.desktop_pet.target_fps.clamp(10, 120);
         self.floating_button.stiffness = self.floating_button.stiffness.clamp(20.0, 500.0);
         self.floating_button.damping = self.floating_button.damping.clamp(1.0, 80.0);
 
@@ -331,6 +388,11 @@ pub struct GeneralConfig {
     pub history_log_enabled: bool,
     #[serde(default = "default_history_log_path")]
     pub history_log_path: String,
+    /// Convert spoken emoji keywords (e.g. "笑脸") into emoji in messengers.
+    /// Off by default because plain substring replacement can also rewrite
+    /// ordinary words that happen to contain a keyword.
+    #[serde(default)]
+    pub emoji_conversion_enabled: bool,
 }
 
 fn default_language() -> String {
@@ -348,6 +410,7 @@ impl Default for GeneralConfig {
             language: default_language(),
             history_log_enabled: false,
             history_log_path: default_history_log_path(),
+            emoji_conversion_enabled: false,
         }
     }
 }
@@ -462,6 +525,25 @@ pub struct DesktopPetConfig {
     pub position_y: i32,
     #[serde(default = "default_desktop_pet_size")]
     pub size: i32,
+    /// Preferred renderer: "cubism" or "png".
+    #[serde(default = "default_desktop_pet_renderer")]
+    pub renderer: String,
+    /// Fixed built-in Aiko skin identifier.
+    #[serde(default = "default_desktop_pet_skin")]
+    pub skin: String,
+    /// Directory containing a Cubism `*.model3.json` model descriptor.
+    #[serde(default = "default_live2d_model_dir")]
+    pub live2d_model_dir: String,
+    #[serde(default = "default_desktop_pet_target_fps")]
+    pub target_fps: u32,
+    #[serde(default = "default_true")]
+    pub power_saving: bool,
+    #[serde(default = "default_true")]
+    pub mouse_gaze_enabled: bool,
+    #[serde(default = "default_true")]
+    pub touch_enabled: bool,
+    #[serde(default = "default_true")]
+    pub motion_enabled: bool,
 }
 
 fn default_desktop_pet_enabled() -> bool {
@@ -476,6 +558,70 @@ fn default_desktop_pet_size() -> i32 {
     160
 }
 
+fn default_desktop_pet_renderer() -> String {
+    DESKTOP_PET_RENDERER_CUBISM.to_string()
+}
+
+fn default_desktop_pet_skin() -> String {
+    DEFAULT_DESKTOP_PET_SKIN.to_string()
+}
+
+fn default_live2d_model_dir() -> String {
+    "models/live2d".to_string()
+}
+
+fn default_desktop_pet_target_fps() -> u32 {
+    30
+}
+
+impl DesktopPetConfig {
+    /// Resolve the configured model directory relative to the application.
+    pub fn live2d_model_path(&self) -> PathBuf {
+        let path = PathBuf::from(self.live2d_model_dir.trim());
+        if path.is_absolute() {
+            path
+        } else {
+            application_dir().join(path)
+        }
+    }
+
+    /// A Cubism model is usable when its directory contains a model3 descriptor.
+    pub fn live2d_model_available(&self) -> bool {
+        let model_dir = self.live2d_model_path();
+        contains_live2d_model(&model_dir)
+    }
+
+    /// Return the renderer that is safe to start with the current local assets.
+    pub fn effective_renderer(&self) -> &'static str {
+        if self.renderer == DESKTOP_PET_RENDERER_CUBISM && self.live2d_model_available() {
+            DESKTOP_PET_RENDERER_CUBISM
+        } else {
+            DESKTOP_PET_RENDERER_PNG
+        }
+    }
+}
+
+fn contains_live2d_model(directory: &Path) -> bool {
+    let Ok(entries) = fs::read_dir(directory) else {
+        return false;
+    };
+
+    entries.filter_map(|entry| entry.ok()).any(|entry| {
+        let Ok(file_type) = entry.file_type() else {
+            return false;
+        };
+        if file_type.is_dir() {
+            return contains_live2d_model(&entry.path());
+        }
+        file_type.is_file()
+            && entry
+                .file_name()
+                .to_string_lossy()
+                .to_ascii_lowercase()
+                .ends_with(".model3.json")
+    })
+}
+
 impl Default for DesktopPetConfig {
     fn default() -> Self {
         Self {
@@ -483,6 +629,14 @@ impl Default for DesktopPetConfig {
             position_x: default_desktop_pet_position(),
             position_y: default_desktop_pet_position(),
             size: default_desktop_pet_size(),
+            renderer: default_desktop_pet_renderer(),
+            skin: default_desktop_pet_skin(),
+            live2d_model_dir: default_live2d_model_dir(),
+            target_fps: default_desktop_pet_target_fps(),
+            power_saving: true,
+            mouse_gaze_enabled: true,
+            touch_enabled: true,
+            motion_enabled: true,
         }
     }
 }
@@ -610,6 +764,10 @@ mod tests {
         assert_eq!(config.asr.offline_provider, "sherpa_onnx");
         assert!(!config.general.history_log_enabled);
         assert!(config.audio.input_device.is_empty());
+        assert_eq!(config.desktop_pet.renderer, "cubism");
+        assert_eq!(config.desktop_pet.skin, "default");
+        assert_eq!(config.desktop_pet.live2d_model_dir, "models/live2d");
+        assert_eq!(config.desktop_pet.target_fps, 30);
         config.validate().unwrap();
     }
 
@@ -620,6 +778,10 @@ mod tests {
         config.hotkey.combo_key = "Ctrl+Banana".to_string();
         config.hotkey.double_tap_interval = 5;
         config.desktop_pet.size = 4_000;
+        config.desktop_pet.renderer = "unknown".to_string();
+        config.desktop_pet.skin = "unknown".to_string();
+        config.desktop_pet.live2d_model_dir = " ".to_string();
+        config.desktop_pet.target_fps = 1_000;
         config.asr.backend = "cloudish".to_string();
         config.asr.online_provider = "future_cloud".to_string();
         config.asr.offline_provider = "sherpa-onnx".to_string();
@@ -629,6 +791,10 @@ mod tests {
         assert_eq!(config.hotkey.combo_key, "Ctrl+Shift+V");
         assert_eq!(config.hotkey.double_tap_interval, 100);
         assert_eq!(config.desktop_pet.size, 320);
+        assert_eq!(config.desktop_pet.renderer, "cubism");
+        assert_eq!(config.desktop_pet.skin, "default");
+        assert_eq!(config.desktop_pet.live2d_model_dir, "models/live2d");
+        assert_eq!(config.desktop_pet.target_fps, 120);
         assert_eq!(config.asr.backend, "online");
         assert_eq!(config.asr.online_provider, "doubao");
         assert_eq!(config.asr.offline_provider, "sherpa_onnx");
@@ -642,5 +808,55 @@ mod tests {
         assert!(!is_valid_combo("Ctrl"));
         assert!(!is_valid_combo("Ctrl+Mouse4"));
         assert!(!is_valid_combo("Ctrl+V+B"));
+    }
+
+    #[test]
+    fn cubism_renderer_falls_back_without_a_model() {
+        let mut config = DesktopPetConfig::default();
+        config.live2d_model_dir = std::env::temp_dir()
+            .join(format!("aiko-missing-live2d-model-{}", std::process::id()))
+            .display()
+            .to_string();
+
+        assert_eq!(config.effective_renderer(), "png");
+    }
+
+    #[test]
+    fn cubism_renderer_is_selected_for_a_model3_descriptor() {
+        let model_dir = std::env::temp_dir().join(format!(
+            "aiko-live2d-config-test-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let nested_model_dir = model_dir.join("aiko");
+        fs::create_dir_all(&nested_model_dir).unwrap();
+        fs::write(nested_model_dir.join("aiko.model3.json"), "{}").unwrap();
+
+        let mut config = DesktopPetConfig::default();
+        config.live2d_model_dir = model_dir.display().to_string();
+        assert_eq!(config.effective_renderer(), "cubism");
+
+        fs::remove_dir_all(model_dir).unwrap();
+    }
+
+    #[test]
+    fn live2d_validation_errors_are_bilingual() {
+        let mut config = AppConfig::default();
+        config.desktop_pet.renderer = "invalid".to_string();
+        let error = config.validate().unwrap_err().to_string();
+        assert!(error.contains("桌宠渲染器"));
+        assert!(error.contains("Desktop pet renderer"));
+
+        config.desktop_pet.renderer = "cubism".to_string();
+        config.desktop_pet.skin = "not_aiko".to_string();
+        let error = config.validate().unwrap_err().to_string();
+        assert!(error.contains("桌宠皮肤"));
+        assert!(error.contains("Invalid desktop pet skin"));
+
+        config.desktop_pet.skin = "cag_operator".to_string();
+        config.desktop_pet.target_fps = 5;
+        let error = config.validate().unwrap_err().to_string();
+        assert!(error.contains("桌宠帧率"));
+        assert!(error.contains("Desktop pet frame rate"));
     }
 }

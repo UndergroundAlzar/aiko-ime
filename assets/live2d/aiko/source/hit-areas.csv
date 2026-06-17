@@ -1,0 +1,4 @@
+hit_area_name,drawable_id,source_layer_id,interaction,priority,required,notes_zh
+Head,D_Hit_Head,hit_head,pet,100,true,移动累计触发抚摸且单击沿用桌宠主操作
+Mic,D_Hit_Mic,hit_mic,toggle_listening,90,true,单击切换开始或停止语音输入
+Body,D_Hit_Body,hit_body,drag,10,true,拖动桌宠窗口且不抢占头部和麦克风区域

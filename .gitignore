@@ -11,7 +11,10 @@ logs/
 
 # Local handoff/debug notes
 /HANDOFF.md
+/HANDOFF_CLAUDECODE.md
 /build_errors.txt
+/KOKOKO_MANIFEST.json
+/.omc/
 /PRD/
 
 # Release archives and local test folders

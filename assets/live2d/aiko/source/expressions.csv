@@ -1,0 +1,8 @@
+name,file,fade_in_sec,fade_out_sec,required,purpose_zh
+neutral,expressions/neutral.exp3.json,0.3,0.3,true,默认表情
+listening,expressions/listening.exp3.json,0.15,0.2,true,倾听与麦克风发光
+processing,expressions/processing.exp3.json,0.15,0.2,true,思考状态
+success,expressions/success.exp3.json,0.1,0.3,true,成功笑脸
+error,expressions/error.exp3.json,0.1,0.35,true,错误沮丧表情
+petted,expressions/petted.exp3.json,0.08,0.25,true,摸头开心表情
+sleepy,expressions/sleepy.exp3.json,0.4,0.25,true,困倦闭眼表情

@@ -3,7 +3,7 @@
 //! Encodes PCM audio data to Opus format.
 
 use anyhow::{anyhow, Result};
-use opus::{Application, Channels, Encoder};
+use opus::{Application, Bitrate, Channels, Encoder};
 
 /// Opus encoder wrapper
 pub struct OpusEncoder {
@@ -22,8 +22,13 @@ impl OpusEncoder {
             _ => return Err(anyhow!("Invalid channel count: {}", channels)),
         };
 
-        let encoder = Encoder::new(sample_rate, channels_enum, Application::Audio)
+        // `Voip` tunes Opus for speech intelligibility, which is what an ASR
+        // backend consumes; a fixed 24kbps keeps frames small and consistent.
+        let mut encoder = Encoder::new(sample_rate, channels_enum, Application::Voip)
             .map_err(|e| anyhow!("Failed to create Opus encoder: {:?}", e))?;
+        if let Err(e) = encoder.set_bitrate(Bitrate::Bits(24_000)) {
+            tracing::warn!("Failed to set Opus bitrate, using default: {:?}", e);
+        }
 
         // Frame size for 20ms at the given sample rate
         let frame_size = (sample_rate * 20 / 1000) as usize;

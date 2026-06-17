@@ -19,20 +19,54 @@ use crate::ui::{
     FloatingButtonStateSetter,
 };
 
+/// Reload the configuration from disk, apply one mutation, and save.
+///
+/// Position/size/visibility updates arrive from several threads; mutating a
+/// long-lived stale copy would silently revert changes saved by the settings
+/// window in the meantime.
+fn update_config<F: FnOnce(&mut AppConfig)>(context: &str, mutator: F) {
+    match AppConfig::load_or_default() {
+        Ok(mut config) => {
+            mutator(&mut config);
+            if let Err(e) = config.save() {
+                tracing::error!("Failed to save config ({}): {}", context, e);
+            }
+        }
+        Err(e) => {
+            tracing::error!("Failed to load config for update ({}): {}", context, e);
+        }
+    }
+}
+
+/// Watch a running session and put the HUD and pet back into a sane state when
+/// the session ends on its own (server hangup, target window lost, error).
+/// User-initiated stop/cancel paths set their own pet states.
 fn spawn_recording_state_monitor(
     voice_controller: Arc<Mutex<VoiceController>>,
     setter: FloatingButtonStateSetter,
+    pet_handle: DesktopPetHandle,
 ) {
     tokio::spawn(async move {
         loop {
             tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-            let recording = {
+            let (recording, stopped_by_user, had_error) = {
                 let controller = voice_controller.lock().await;
-                controller.is_recording()
+                (
+                    controller.is_recording(),
+                    controller.was_stopped_by_user(),
+                    controller.last_input_error().is_some(),
+                )
             };
 
             if !recording {
                 setter.set_state(ButtonState::Idle);
+                if !stopped_by_user {
+                    if had_error {
+                        pet_handle.set_error();
+                    } else {
+                        pet_handle.set_idle();
+                    }
+                }
                 break;
             }
         }
@@ -57,13 +91,14 @@ fn spawn_start_recording(
         pet_handle.set_listening();
         let monitor_vc = voice_controller.clone();
         let monitor_setter = setter.clone();
+        let monitor_pet = pet_handle.clone();
         if let Err(e) = controller.start().await {
             tracing::error!("Failed to start voice input from {}: {}", source, e);
             setter.set_state(ButtonState::Idle);
             pet_handle.set_error();
         } else {
             drop(controller);
-            spawn_recording_state_monitor(monitor_vc, monitor_setter);
+            spawn_recording_state_monitor(monitor_vc, monitor_setter, monitor_pet);
         }
     });
 }
@@ -121,6 +156,24 @@ fn spawn_cancel_recording(
         setter.set_state(ButtonState::Idle);
     });
 }
+
+/// Ask the main-thread Win32 message loop to exit.
+///
+/// `PostQuitMessage` only posts to the *calling* thread's queue, so calling it
+/// from the event-handler thread would leave the main `GetMessageW` loop
+/// blocked until an unrelated message arrived. Post `WM_QUIT` to the main
+/// thread explicitly instead.
+#[cfg(target_os = "windows")]
+fn request_main_loop_exit(main_thread_id: u32) {
+    use windows::Win32::Foundation::{LPARAM, WPARAM};
+    use windows::Win32::UI::WindowsAndMessaging::{PostThreadMessageW, WM_QUIT};
+    unsafe {
+        let _ = PostThreadMessageW(main_thread_id, WM_QUIT, WPARAM(0), LPARAM(0));
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn request_main_loop_exit(_main_thread_id: u32) {}
 
 /// Run the application with system tray and floating button
 pub async fn run_app(
@@ -210,6 +263,13 @@ pub async fn run_app(
     // Get tokio runtime handle for async operations
     let runtime_handle = tokio::runtime::Handle::current();
 
+    // The Win32 message loop below runs on this thread; the event-handler
+    // thread needs its id to deliver WM_QUIT.
+    #[cfg(target_os = "windows")]
+    let main_thread_id = unsafe { windows::Win32::System::Threading::GetCurrentThreadId() };
+    #[cfg(not(target_os = "windows"))]
+    let main_thread_id = 0u32;
+
     // Set up hotkey callback with state sync
     let vc_for_hotkey = voice_controller.clone();
     let state_for_hotkey = button_state_setter.clone();
@@ -240,7 +300,6 @@ pub async fn run_app(
     let state_setter_clone = button_state_setter.clone();
     let pet_handle = desktop_pet_handle.clone();
     let _keep_hotkey_manager = hotkey_manager;
-    let mut config = config;
     let mut desktop_pet_visible = config.desktop_pet.enabled;
 
     std::thread::spawn(move || {
@@ -277,10 +336,10 @@ pub async fn run_app(
                         pet_handle.hide();
                         tracing::info!("Desktop pet hidden from menu");
                     }
-                    config.desktop_pet.enabled = desktop_pet_visible;
-                    if let Err(e) = config.save() {
-                        tracing::error!("Failed to save desktop pet config: {}", e);
-                    }
+                    let visible = desktop_pet_visible;
+                    update_config("desktop pet visibility", |config| {
+                        config.desktop_pet.enabled = visible;
+                    });
                 } else if event.id == settings_id {
                     tracing::info!("Settings from menu");
                     if let Err(e) = open_settings() {
@@ -290,10 +349,7 @@ pub async fn run_app(
                     tracing::info!("Quit from menu");
                     pet_handle.exit();
                     running_clone.store(false, Ordering::SeqCst);
-                    #[cfg(target_os = "windows")]
-                    unsafe {
-                        windows::Win32::UI::WindowsAndMessaging::PostQuitMessage(0);
-                    }
+                    request_main_loop_exit(main_thread_id);
                 }
             }
 
@@ -327,19 +383,14 @@ pub async fn run_app(
                             tracing::info!("Exit from floating button");
                             pet_handle.exit();
                             running_clone.store(false, Ordering::SeqCst);
-                            #[cfg(target_os = "windows")]
-                            unsafe {
-                                windows::Win32::UI::WindowsAndMessaging::PostQuitMessage(0);
-                            }
+                            request_main_loop_exit(main_thread_id);
                         }
                         FloatingButtonEvent::UpdatePosition { x, y } => {
-                            config.floating_button.position_x = x;
-                            config.floating_button.position_y = y;
-                            if let Err(e) = config.save() {
-                                tracing::error!("Failed to save config: {}", e);
-                            } else {
-                                tracing::debug!("Saved floating button position: ({}, {})", x, y);
-                            }
+                            update_config("floating button position", |config| {
+                                config.floating_button.position_x = x;
+                                config.floating_button.position_y = y;
+                            });
+                            tracing::debug!("Saved floating button position: ({}, {})", x, y);
                         }
                     }
                 }
@@ -367,17 +418,23 @@ pub async fn run_app(
                             );
                         }
                         DesktopPetEvent::PositionSaveRequested { x, y } => {
-                            config.desktop_pet.position_x = x;
-                            config.desktop_pet.position_y = y;
-                            if let Err(e) = config.save() {
-                                tracing::error!("Failed to save desktop pet position: {}", e);
-                            }
+                            update_config("desktop pet position", |config| {
+                                config.desktop_pet.position_x = x;
+                                config.desktop_pet.position_y = y;
+                            });
                         }
                         DesktopPetEvent::SizeSaveRequested { size } => {
-                            config.desktop_pet.size = size;
-                            if let Err(e) = config.save() {
-                                tracing::error!("Failed to save desktop pet size: {}", e);
-                            }
+                            update_config("desktop pet size", |config| {
+                                config.desktop_pet.size = size;
+                            });
+                        }
+                        DesktopPetEvent::VisibilityChanged { visible } => {
+                            // Keep the tray toggle's backing flag and the saved
+                            // config in sync with the pet's own context menu.
+                            desktop_pet_visible = visible;
+                            update_config("desktop pet visibility", |config| {
+                                config.desktop_pet.enabled = visible;
+                            });
                         }
                         DesktopPetEvent::Petted { count } => {
                             tracing::debug!("Desktop pet petted {} times", count);
@@ -437,328 +494,3 @@ fn load_icon() -> Result<tray_icon::Icon> {
     let icon = tray_icon::Icon::from_rgba(image.into_raw(), width, height)?;
     Ok(icon)
 }
-
-#[cfg(target_os = "windows")]
-#[allow(dead_code)]
-struct RecorderState {
-    current_keys: String,
-    saved: bool,
-}
-
-#[cfg(target_os = "windows")]
-#[allow(dead_code)]
-fn vk_to_string(vk: u32) -> Option<&'static str> {
-    match vk {
-        0x41..=0x5A => {
-            // A..Z
-            match vk {
-                0x41 => Some("A"),
-                0x42 => Some("B"),
-                0x43 => Some("C"),
-                0x44 => Some("D"),
-                0x45 => Some("E"),
-                0x46 => Some("F"),
-                0x47 => Some("G"),
-                0x48 => Some("H"),
-                0x49 => Some("I"),
-                0x4A => Some("J"),
-                0x4B => Some("K"),
-                0x4C => Some("L"),
-                0x4D => Some("M"),
-                0x4E => Some("N"),
-                0x4F => Some("O"),
-                0x50 => Some("P"),
-                0x51 => Some("Q"),
-                0x52 => Some("R"),
-                0x53 => Some("S"),
-                0x54 => Some("T"),
-                0x55 => Some("U"),
-                0x56 => Some("V"),
-                0x57 => Some("W"),
-                0x58 => Some("X"),
-                0x59 => Some("Y"),
-                0x5A => Some("Z"),
-                _ => None,
-            }
-        }
-        0x30..=0x39 => {
-            // 0..9
-            match vk {
-                0x30 => Some("0"),
-                0x31 => Some("1"),
-                0x32 => Some("2"),
-                0x33 => Some("3"),
-                0x34 => Some("4"),
-                0x35 => Some("5"),
-                0x36 => Some("6"),
-                0x37 => Some("7"),
-                0x38 => Some("8"),
-                0x39 => Some("9"),
-                _ => None,
-            }
-        }
-        0x70..=0x7B => {
-            // F1..F12
-            match vk {
-                0x70 => Some("F1"),
-                0x71 => Some("F2"),
-                0x72 => Some("F3"),
-                0x73 => Some("F4"),
-                0x74 => Some("F5"),
-                0x75 => Some("F6"),
-                0x76 => Some("F7"),
-                0x77 => Some("F8"),
-                0x78 => Some("F9"),
-                0x79 => Some("F10"),
-                0x7A => Some("F11"),
-                0x7B => Some("F12"),
-                _ => None,
-            }
-        }
-        0x20 => Some("Space"),
-        _ => None,
-    }
-}
-
-#[cfg(target_os = "windows")]
-#[allow(dead_code)]
-unsafe extern "system" fn recorder_wnd_proc(
-    hwnd: windows::Win32::Foundation::HWND,
-    msg: u32,
-    wparam: windows::Win32::Foundation::WPARAM,
-    lparam: windows::Win32::Foundation::LPARAM,
-) -> windows::Win32::Foundation::LRESULT {
-    use windows::core::w;
-    use windows::Win32::Foundation::{COLORREF, LRESULT, RECT};
-    use windows::Win32::Graphics::Gdi::*;
-    use windows::Win32::UI::Input::KeyboardAndMouse::*;
-    use windows::Win32::UI::WindowsAndMessaging::*;
-
-    match msg {
-        WM_CREATE => {
-            let create_struct = lparam.0 as *const CREATESTRUCTW;
-            if !create_struct.is_null() {
-                let state_ptr = (*create_struct).lpCreateParams as *mut RecorderState;
-                SetWindowLongPtrW(hwnd, GWLP_USERDATA, state_ptr as isize);
-            }
-            LRESULT(0)
-        }
-        WM_PAINT => {
-            let mut ps = PAINTSTRUCT::default();
-            let hdc = BeginPaint(hwnd, &mut ps);
-            if hdc.0 != 0 {
-                let state_ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut RecorderState;
-                if !state_ptr.is_null() {
-                    let state = &*state_ptr;
-
-                    let mut rect = RECT::default();
-                    let _ = GetClientRect(hwnd, &mut rect);
-
-                    let white_brush = HBRUSH(GetStockObject(WHITE_BRUSH).0);
-                    FillRect(hdc, &rect, white_brush);
-
-                    let _ = SetBkMode(hdc, TRANSPARENT);
-
-                    let _ = SetTextColor(hdc, COLORREF(0x000000));
-                    let mut title = w!("录制快捷键组合 (Hotkey Recorder)").as_wide().to_vec();
-                    let mut title_rect = RECT {
-                        left: 20,
-                        top: 20,
-                        right: rect.right - 20,
-                        bottom: 50,
-                    };
-                    let _ = DrawTextW(
-                        hdc,
-                        &mut title,
-                        &mut title_rect,
-                        DT_LEFT | DT_VCENTER | DT_SINGLELINE,
-                    );
-
-                    let mut instr = w!("请按住 Ctrl / Shift / Alt 并按下字母/数字键进行录制：")
-                        .as_wide()
-                        .to_vec();
-                    let mut instr_rect = RECT {
-                        left: 20,
-                        top: 50,
-                        right: rect.right - 20,
-                        bottom: 90,
-                    };
-                    let _ = DrawTextW(hdc, &mut instr, &mut instr_rect, DT_LEFT | DT_WORDBREAK);
-
-                    let key_text = format!(
-                        "当前组合: {}",
-                        if state.current_keys.is_empty() {
-                            "无"
-                        } else {
-                            &state.current_keys
-                        }
-                    );
-                    let mut wide_key: Vec<u16> = key_text.encode_utf16().collect();
-                    wide_key.push(0);
-
-                    let mut key_rect = RECT {
-                        left: 20,
-                        top: 90,
-                        right: rect.right - 20,
-                        bottom: 130,
-                    };
-                    let _ = SetTextColor(hdc, COLORREF(0xCC3300));
-                    let _ = DrawTextW(
-                        hdc,
-                        &mut wide_key,
-                        &mut key_rect,
-                        DT_LEFT | DT_VCENTER | DT_SINGLELINE,
-                    );
-
-                    let mut footer = w!("按 Enter 保存并写入 config.toml，按 Esc 取消。")
-                        .as_wide()
-                        .to_vec();
-                    let mut footer_rect = RECT {
-                        left: 20,
-                        top: 130,
-                        right: rect.right - 20,
-                        bottom: 170,
-                    };
-                    let _ = SetTextColor(hdc, COLORREF(0x555555));
-                    let _ = DrawTextW(
-                        hdc,
-                        &mut footer,
-                        &mut footer_rect,
-                        DT_LEFT | DT_VCENTER | DT_SINGLELINE,
-                    );
-                }
-            }
-            EndPaint(hwnd, &ps);
-            LRESULT(0)
-        }
-        WM_KEYDOWN | WM_SYSKEYDOWN => {
-            let state_ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut RecorderState;
-            if !state_ptr.is_null() {
-                let vk = wparam.0 as u32;
-                if vk == 0x1B {
-                    // Esc
-                    let _ = DestroyWindow(hwnd);
-                    return LRESULT(0);
-                }
-                if vk == 0x0D {
-                    // Enter
-                    let state = &mut *state_ptr;
-                    if !state.current_keys.is_empty() {
-                        state.saved = true;
-                        let _ = DestroyWindow(hwnd);
-                    }
-                    return LRESULT(0);
-                }
-
-                let ctrl = GetAsyncKeyState(VK_CONTROL.0 as i32) as u16 & 0x8000 != 0;
-                let shift = GetAsyncKeyState(VK_SHIFT.0 as i32) as u16 & 0x8000 != 0;
-                let alt = GetAsyncKeyState(VK_MENU.0 as i32) as u16 & 0x8000 != 0;
-
-                if vk != VK_CONTROL.0 as u32
-                    && vk != VK_SHIFT.0 as u32
-                    && vk != VK_MENU.0 as u32
-                    && vk != 0x5B
-                    && vk != 0x5C
-                    && vk != 0x14
-                {
-                    if let Some(key_str) = vk_to_string(vk) {
-                        let mut combo = String::new();
-                        if ctrl {
-                            combo.push_str("Ctrl+");
-                        }
-                        if shift {
-                            combo.push_str("Shift+");
-                        }
-                        if alt {
-                            combo.push_str("Alt+");
-                        }
-                        combo.push_str(key_str);
-
-                        let state = &mut *state_ptr;
-                        state.current_keys = combo;
-                        let _ = InvalidateRect(hwnd, None, true);
-                    }
-                }
-            }
-            LRESULT(0)
-        }
-        WM_DESTROY => {
-            PostQuitMessage(0);
-            LRESULT(0)
-        }
-        _ => DefWindowProcW(hwnd, msg, wparam, lparam),
-    }
-}
-
-#[cfg(target_os = "windows")]
-#[allow(dead_code)]
-pub fn run_hotkey_recorder() {
-    std::thread::spawn(|| {
-        unsafe {
-            use windows::core::w;
-            use windows::Win32::Graphics::Gdi::HBRUSH;
-            use windows::Win32::System::LibraryLoader::GetModuleHandleW;
-            use windows::Win32::UI::WindowsAndMessaging::*;
-
-            let h_instance = GetModuleHandleW(None).unwrap_or_default();
-            let class_name = w!("HotkeyRecorderClass");
-
-            let mut state = Box::new(RecorderState {
-                current_keys: String::new(),
-                saved: false,
-            });
-
-            let wnd_class = WNDCLASSW {
-                style: CS_HREDRAW | CS_VREDRAW,
-                lpfnWndProc: Some(recorder_wnd_proc),
-                hInstance: h_instance.into(),
-                hCursor: LoadCursorW(None, IDC_ARROW).unwrap_or_default(),
-                hbrBackground: HBRUSH(6), // COLOR_WINDOW + 1
-                lpszClassName: class_name,
-                ..Default::default()
-            };
-
-            let _ = RegisterClassW(&wnd_class);
-
-            let hwnd = CreateWindowExW(
-                WINDOW_EX_STYLE(0),
-                class_name,
-                w!("录制快捷键"),
-                WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU,
-                CW_USEDEFAULT,
-                CW_USEDEFAULT,
-                450,
-                220,
-                None,
-                None,
-                h_instance,
-                Some(state.as_mut() as *mut RecorderState as *const std::ffi::c_void),
-            );
-
-            if hwnd.0 != 0 {
-                let _ = ShowWindow(hwnd, SW_SHOW);
-                let _ = windows::Win32::Graphics::Gdi::UpdateWindow(hwnd);
-
-                let mut msg = MSG::default();
-                while GetMessageW(&mut msg, None, 0, 0).as_bool() {
-                    let _ = TranslateMessage(&msg);
-                    DispatchMessageW(&msg);
-                }
-
-                if state.saved && !state.current_keys.is_empty() {
-                    if let Ok(mut config) = AppConfig::load_or_default() {
-                        config.hotkey.combo_key = state.current_keys.clone();
-                        if let Err(e) = config.save() {
-                            tracing::error!("Failed to save hotkey config: {}", e);
-                        } else {
-                            tracing::info!("Saved new hotkey combo: {}", state.current_keys);
-                        }
-                    }
-                }
-            }
-        }
-    });
-}
-
-#[cfg(not(target_os = "windows"))]
-pub fn run_hotkey_recorder() {}

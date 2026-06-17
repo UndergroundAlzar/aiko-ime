@@ -1,0 +1,9 @@
+group,name,file,fade_in_sec,fade_out_sec,loop,trigger,return_state,required
+idle,idle_01,motions/idle_01.motion3.json,0.5,0.5,true,state_idle,idle,true
+listening,listening_loop,motions/listening_loop.motion3.json,0.2,0.2,true,state_listening,listening,true
+processing,processing_loop,motions/processing_loop.motion3.json,0.15,0.2,true,state_processing,processing,true
+success,success_01,motions/success_01.motion3.json,0.1,0.35,false,state_success,idle,true
+error,error_01,motions/error_01.motion3.json,0.1,0.4,false,state_error,idle,true
+petted,petted_01,motions/petted_01.motion3.json,0.08,0.2,false,hit_head,previous,true
+sleepy,sleepy_loop,motions/sleepy_loop.motion3.json,0.6,0.3,true,state_sleepy,sleepy,true
+tap_mic,tap_mic_01,motions/tap_mic_01.motion3.json,0.08,0.15,false,hit_mic,previous,false

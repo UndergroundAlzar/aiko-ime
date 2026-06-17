@@ -1,6 +1,6 @@
 [package]
 name = "aiko-ime"
-version = "1.5.0"
+version = "1.6.0"
 edition = "2021"
 authors = ["AikoIME Team"]
 description = "Windows 语音输入助手 / Windows voice input tool"
@@ -9,6 +9,8 @@ license = "MIT"
 [features]
 default = []
 sherpa-onnx = []
+cubism-live2d = ["dep:libloading"]
+webview2-renderer = ["dep:webview2-com", "dep:windows-webview"]
 
 [dependencies]
 # Async runtime
@@ -51,6 +53,15 @@ windows = { version = "0.52", features = [
     "Win32_Graphics_Dwm",
     "Win32_System_Threading",
 ] }
+webview2-com = { version = "0.39.1", optional = true }
+windows-webview = { package = "windows", version = "0.62", optional = true, features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Gdi",
+    "Win32_System_Com",
+    "Win32_System_LibraryLoader",
+    "Win32_System_Threading",
+    "Win32_UI_WindowsAndMessaging",
+] }
 
 # Configuration
 serde = { version = "1.0", features = ["derive"] }
@@ -60,6 +71,7 @@ toml = "0.8"
 # Logging
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-appender = "0.2"
 
 # Error handling
 anyhow = "1.0"
@@ -77,15 +89,16 @@ hex = "0.4"
 # MD5 hashing (for x-ss-stub header)
 md5 = "0.7"
 
-# Crypto (for DPAPI alternative - simple encryption)
-ring = "0.17"
-base64 = "0.21"
-
 # Image for tray icon
 image = "0.24"
+libloading = { version = "0.8", optional = true }
 
 [build-dependencies]
 prost-build = "0.12"
+
+[dev-dependencies]
+# SHA-256 digests for the art-asset contract tests
+ring = "0.17"
 
 [profile.release]
 opt-level = "z"

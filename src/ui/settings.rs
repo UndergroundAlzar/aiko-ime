@@ -53,11 +53,13 @@ mod windows_settings {
     const PAGE_RECOGNITION: usize = 1;
     const PAGE_VOCABULARY: usize = 2;
     const PAGE_AI: usize = 3;
+    const PAGE_DESKTOP_PET: usize = 4;
 
     const ID_PAGE_GENERAL: i32 = 100;
     const ID_PAGE_RECOGNITION: i32 = 101;
     const ID_PAGE_VOCABULARY: i32 = 102;
     const ID_PAGE_AI: i32 = 103;
+    const ID_PAGE_DESKTOP_PET: i32 = 104;
     const ID_SAVE: i32 = 110;
     const ID_CANCEL: i32 = 111;
     const ID_TEST_MIC: i32 = 112;
@@ -65,6 +67,15 @@ mod windows_settings {
     const ID_HOTKEY_MODE: i32 = 114;
     const ID_ASR_BACKEND: i32 = 115;
     const ID_TEST_RECOGNITION: i32 = 116;
+    const ID_DESKTOP_PET_RENDERER: i32 = 117;
+    const DESKTOP_PET_SKINS: [(&str, &str); 6] = [
+        ("default", "默认 Aiko / Default Aiko"),
+        ("pajama", "睡衣版 / Pajama"),
+        ("rain", "雨天版 / Rain"),
+        ("winter", "冬装版 / Winter"),
+        ("celebration", "庆祝版 / Celebration"),
+        ("cag_operator", "CAG 特种作战干员 / CAG Operator"),
+    ];
 
     static SETTINGS_OPEN: AtomicBool = AtomicBool::new(false);
     static SETTINGS_HWND: AtomicIsize = AtomicIsize::new(0);
@@ -83,6 +94,14 @@ mod windows_settings {
         floating_button: HWND,
         desktop_pet: HWND,
         desktop_pet_size: HWND,
+        desktop_pet_renderer: HWND,
+        desktop_pet_skin: HWND,
+        live2d_model_dir: HWND,
+        desktop_pet_target_fps: HWND,
+        desktop_pet_power_saving: HWND,
+        desktop_pet_mouse_gaze: HWND,
+        desktop_pet_touch: HWND,
+        desktop_pet_motion: HWND,
         language: HWND,
         asr_backend: HWND,
         online_provider: HWND,
@@ -105,7 +124,7 @@ mod windows_settings {
     struct WindowState {
         config: AppConfig,
         controls: Controls,
-        pages: [Vec<HWND>; 4],
+        pages: [Vec<HWND>; 5],
         microphone_names: Vec<String>,
         current_page: usize,
     }
@@ -244,6 +263,7 @@ mod windows_settings {
                     ID_PAGE_RECOGNITION => show_page(&mut *state, PAGE_RECOGNITION),
                     ID_PAGE_VOCABULARY => show_page(&mut *state, PAGE_VOCABULARY),
                     ID_PAGE_AI => show_page(&mut *state, PAGE_AI),
+                    ID_PAGE_DESKTOP_PET => show_page(&mut *state, PAGE_DESKTOP_PET),
                     ID_CANCEL => {
                         let _ = DestroyWindow(hwnd);
                     }
@@ -255,6 +275,9 @@ mod windows_settings {
                         update_hotkey_controls(&*state)
                     }
                     ID_ASR_BACKEND if notification == CBN_SELCHANGE => update_asr_controls(&*state),
+                    ID_DESKTOP_PET_RENDERER if notification == CBN_SELCHANGE => {
+                        update_desktop_pet_renderer_controls(&*state)
+                    }
                     _ => {}
                 }
                 LRESULT(0)
@@ -312,6 +335,7 @@ mod windows_settings {
             (ID_PAGE_RECOGNITION, "识别与隐私 / ASR", 134),
             (ID_PAGE_VOCABULARY, "词典 / Vocabulary", 176),
             (ID_PAGE_AI, "AI 设置 / AI", 218),
+            (ID_PAGE_DESKTOP_PET, "桌宠 / Live2D", 260),
         ] {
             create_control(
                 instance,
@@ -385,6 +409,7 @@ mod windows_settings {
         create_recognition_page(instance, hwnd, state);
         create_vocabulary_page(instance, hwnd, state);
         create_ai_page(instance, hwnd, state);
+        create_desktop_pet_page(instance, hwnd, state);
         populate_form(state);
         show_page(state, PAGE_GENERAL);
         Ok(())
@@ -535,7 +560,7 @@ mod windows_settings {
             180,
             378,
             740,
-            142,
+            82,
         );
         state.controls.floating_button = add_checkbox(
             instance,
@@ -548,42 +573,6 @@ mod windows_settings {
             300,
             24,
         );
-        state.controls.desktop_pet = add_checkbox(
-            instance,
-            hwnd,
-            state,
-            PAGE_GENERAL,
-            "显示桌宠 / Show desktop pet",
-            202,
-            452,
-            300,
-            24,
-        );
-        add_label(
-            instance,
-            hwnd,
-            state,
-            PAGE_GENERAL,
-            "桌宠尺寸 / Pet size",
-            574,
-            414,
-            155,
-            22,
-        );
-        state.controls.desktop_pet_size =
-            add_edit(instance, hwnd, state, PAGE_GENERAL, 730, 410, 100, 26, 0);
-        add_label(
-            instance,
-            hwnd,
-            state,
-            PAGE_GENERAL,
-            "96 - 320 px",
-            838,
-            414,
-            70,
-            22,
-        );
-
         add_group(
             instance,
             hwnd,
@@ -591,7 +580,7 @@ mod windows_settings {
             PAGE_GENERAL,
             "系统 / System",
             180,
-            534,
+            474,
             740,
             82,
         );
@@ -602,7 +591,7 @@ mod windows_settings {
             PAGE_GENERAL,
             "登录 Windows 时自动启动 / Launch at sign-in",
             202,
-            566,
+            506,
             360,
             24,
         );
@@ -613,12 +602,230 @@ mod windows_settings {
             PAGE_GENERAL,
             "语言 / Language",
             574,
-            566,
+            506,
             125,
             22,
         );
         state.controls.language =
-            add_edit(instance, hwnd, state, PAGE_GENERAL, 700, 562, 195, 26, 0);
+            add_edit(instance, hwnd, state, PAGE_GENERAL, 700, 502, 195, 26, 0);
+    }
+
+    unsafe fn create_desktop_pet_page(instance: HINSTANCE, hwnd: HWND, state: &mut WindowState) {
+        add_group(
+            instance,
+            hwnd,
+            state,
+            PAGE_DESKTOP_PET,
+            "渲染器 / Renderer",
+            180,
+            52,
+            740,
+            252,
+        );
+        state.controls.desktop_pet = add_checkbox(
+            instance,
+            hwnd,
+            state,
+            PAGE_DESKTOP_PET,
+            "显示桌宠 / Show desktop pet",
+            202,
+            84,
+            300,
+            24,
+        );
+        add_label(
+            instance,
+            hwnd,
+            state,
+            PAGE_DESKTOP_PET,
+            "桌宠尺寸 / Pet size",
+            574,
+            86,
+            155,
+            22,
+        );
+        state.controls.desktop_pet_size =
+            add_edit(instance, hwnd, state, PAGE_DESKTOP_PET, 730, 82, 100, 26, 0);
+        add_label(
+            instance,
+            hwnd,
+            state,
+            PAGE_DESKTOP_PET,
+            "96 - 320 px",
+            838,
+            86,
+            70,
+            22,
+        );
+        add_label(
+            instance,
+            hwnd,
+            state,
+            PAGE_DESKTOP_PET,
+            "渲染器 / Renderer",
+            202,
+            126,
+            160,
+            22,
+        );
+        state.controls.desktop_pet_renderer = add_combo(
+            instance,
+            hwnd,
+            state,
+            PAGE_DESKTOP_PET,
+            365,
+            122,
+            250,
+            100,
+            ID_DESKTOP_PET_RENDERER,
+        );
+        add_label(
+            instance,
+            hwnd,
+            state,
+            PAGE_DESKTOP_PET,
+            "Aiko 皮肤 / Aiko skin",
+            202,
+            168,
+            160,
+            22,
+        );
+        state.controls.desktop_pet_skin = add_combo(
+            instance,
+            hwnd,
+            state,
+            PAGE_DESKTOP_PET,
+            365,
+            164,
+            530,
+            180,
+            0,
+        );
+        add_label(
+            instance,
+            hwnd,
+            state,
+            PAGE_DESKTOP_PET,
+            "模型目录 / Model dir",
+            202,
+            210,
+            160,
+            22,
+        );
+        state.controls.live2d_model_dir = add_edit(
+            instance,
+            hwnd,
+            state,
+            PAGE_DESKTOP_PET,
+            365,
+            206,
+            530,
+            26,
+            0,
+        );
+        add_label(
+            instance,
+            hwnd,
+            state,
+            PAGE_DESKTOP_PET,
+            "目录中需包含 *.model3.json；缺失时自动回退 PNG。 / Missing models fall back to PNG.",
+            202,
+            252,
+            690,
+            24,
+        );
+
+        add_group(
+            instance,
+            hwnd,
+            state,
+            PAGE_DESKTOP_PET,
+            "性能 / Performance",
+            180,
+            320,
+            740,
+            112,
+        );
+        add_label(
+            instance,
+            hwnd,
+            state,
+            PAGE_DESKTOP_PET,
+            "目标帧率 / Target FPS",
+            202,
+            354,
+            190,
+            22,
+        );
+        state.controls.desktop_pet_target_fps =
+            add_edit(instance, hwnd, state, PAGE_DESKTOP_PET, 395, 350, 90, 26, 0);
+        add_label(
+            instance,
+            hwnd,
+            state,
+            PAGE_DESKTOP_PET,
+            "10 - 120",
+            495,
+            354,
+            80,
+            22,
+        );
+        state.controls.desktop_pet_power_saving = add_checkbox(
+            instance,
+            hwnd,
+            state,
+            PAGE_DESKTOP_PET,
+            "空闲时降低帧率 / Reduce FPS while idle",
+            202,
+            392,
+            390,
+            24,
+        );
+
+        add_group(
+            instance,
+            hwnd,
+            state,
+            PAGE_DESKTOP_PET,
+            "交互 / Interaction",
+            180,
+            448,
+            740,
+            142,
+        );
+        state.controls.desktop_pet_mouse_gaze = add_checkbox(
+            instance,
+            hwnd,
+            state,
+            PAGE_DESKTOP_PET,
+            "视线跟随鼠标 / Follow mouse with gaze",
+            202,
+            482,
+            360,
+            24,
+        );
+        state.controls.desktop_pet_touch = add_checkbox(
+            instance,
+            hwnd,
+            state,
+            PAGE_DESKTOP_PET,
+            "启用触摸反馈 / Enable touch reactions",
+            202,
+            520,
+            360,
+            24,
+        );
+        state.controls.desktop_pet_motion = add_checkbox(
+            instance,
+            hwnd,
+            state,
+            PAGE_DESKTOP_PET,
+            "启用模型动作 / Enable model motions",
+            574,
+            482,
+            315,
+            24,
+        );
     }
 
     unsafe fn create_recognition_page(instance: HINSTANCE, hwnd: HWND, state: &mut WindowState) {
@@ -1061,6 +1268,45 @@ mod windows_settings {
             state.controls.desktop_pet_size,
             &state.config.desktop_pet.size.to_string(),
         );
+        for value in ["Live2D Cubism", "PNG fallback"] {
+            combo_add(state.controls.desktop_pet_renderer, value);
+        }
+        combo_select(
+            state.controls.desktop_pet_renderer,
+            usize::from(state.config.desktop_pet.renderer == "png"),
+        );
+        for (_, label) in DESKTOP_PET_SKINS {
+            combo_add(state.controls.desktop_pet_skin, label);
+        }
+        let selected_skin = DESKTOP_PET_SKINS
+            .iter()
+            .position(|(key, _)| *key == state.config.desktop_pet.skin)
+            .unwrap_or(0);
+        combo_select(state.controls.desktop_pet_skin, selected_skin);
+        set_text(
+            state.controls.live2d_model_dir,
+            &state.config.desktop_pet.live2d_model_dir,
+        );
+        set_text(
+            state.controls.desktop_pet_target_fps,
+            &state.config.desktop_pet.target_fps.to_string(),
+        );
+        set_checked(
+            state.controls.desktop_pet_power_saving,
+            state.config.desktop_pet.power_saving,
+        );
+        set_checked(
+            state.controls.desktop_pet_mouse_gaze,
+            state.config.desktop_pet.mouse_gaze_enabled,
+        );
+        set_checked(
+            state.controls.desktop_pet_touch,
+            state.config.desktop_pet.touch_enabled,
+        );
+        set_checked(
+            state.controls.desktop_pet_motion,
+            state.config.desktop_pet.motion_enabled,
+        );
         set_text(state.controls.language, &state.config.general.language);
 
         for value in ["在线 / Online", "离线 / Offline"] {
@@ -1124,6 +1370,7 @@ mod windows_settings {
 
         update_hotkey_controls(state);
         update_asr_controls(state);
+        update_desktop_pet_renderer_controls(state);
     }
 
     unsafe fn save_from_form(hwnd: HWND, state: &mut WindowState) {
@@ -1133,23 +1380,38 @@ mod windows_settings {
             Ok(config)
         }) {
             Ok(config) => {
+                let cubism_fell_back = config.desktop_pet.renderer == "cubism"
+                    && config.desktop_pet.effective_renderer() == "png";
                 state.config = config;
-                set_text(
-                    state.controls.status,
-                    "已保存。热键和部分界面设置将在重启后完全生效。",
-                );
-                show_message(
-                    hwnd,
-                    "设置已保存。\nSettings saved successfully.",
-                    "Aiko IME",
-                    MB_OK | MB_ICONINFORMATION,
-                );
+                if cubism_fell_back {
+                    set_text(
+                        state.controls.status,
+                        "已保存；未找到 Live2D 模型，桌宠将安全回退到 PNG。",
+                    );
+                    show_message(
+                        hwnd,
+                        "设置已保存，但模型目录中未找到 *.model3.json。\n桌宠将使用 PNG 回退渲染器。\n\nSettings saved, but no *.model3.json was found.\nThe desktop pet will use the PNG fallback renderer.",
+                        "Aiko IME",
+                        MB_OK | MB_ICONWARNING,
+                    );
+                } else {
+                    set_text(
+                        state.controls.status,
+                        "已保存。热键和部分界面设置将在重启后完全生效。",
+                    );
+                    show_message(
+                        hwnd,
+                        "设置已保存。\nSettings saved successfully.",
+                        "Aiko IME",
+                        MB_OK | MB_ICONINFORMATION,
+                    );
+                }
             }
             Err(error) => {
                 set_text(state.controls.status, "保存失败，请检查高亮页面中的输入。");
                 show_message(
                     hwnd,
-                    &format!("无法保存设置：\n{error:#}"),
+                    &format!("无法保存设置 / Unable to save settings:\n{error:#}"),
                     "Aiko IME",
                     MB_OK | MB_ICONERROR,
                 );
@@ -1193,6 +1455,28 @@ mod windows_settings {
         config.desktop_pet.enabled = is_checked(state.controls.desktop_pet);
         config.desktop_pet.size =
             parse_field::<i32>(state.controls.desktop_pet_size, "桌宠尺寸 / Pet size")?;
+        config.desktop_pet.renderer =
+            if combo_selection(state.controls.desktop_pet_renderer) == 1 {
+                "png"
+            } else {
+                "cubism"
+            }
+            .to_string();
+        config.desktop_pet.skin = DESKTOP_PET_SKINS
+            .get(combo_selection(state.controls.desktop_pet_skin))
+            .map(|(key, _)| *key)
+            .unwrap_or("default")
+            .to_string();
+        config.desktop_pet.live2d_model_dir =
+            get_text(state.controls.live2d_model_dir).trim().to_string();
+        config.desktop_pet.target_fps = parse_field::<u32>(
+            state.controls.desktop_pet_target_fps,
+            "桌宠帧率 / Desktop pet frame rate",
+        )?;
+        config.desktop_pet.power_saving = is_checked(state.controls.desktop_pet_power_saving);
+        config.desktop_pet.mouse_gaze_enabled = is_checked(state.controls.desktop_pet_mouse_gaze);
+        config.desktop_pet.touch_enabled = is_checked(state.controls.desktop_pet_touch);
+        config.desktop_pet.motion_enabled = is_checked(state.controls.desktop_pet_motion);
 
         config.asr.backend = if combo_selection(state.controls.asr_backend) == 1 {
             "offline"
@@ -1602,12 +1886,18 @@ mod windows_settings {
         let _ = EnableWindow(state.controls.offline_model_dir, offline);
     }
 
+    unsafe fn update_desktop_pet_renderer_controls(state: &WindowState) {
+        let cubism = combo_selection(state.controls.desktop_pet_renderer) == 0;
+        let _ = EnableWindow(state.controls.live2d_model_dir, cubism);
+    }
+
     unsafe fn show_page(state: &mut WindowState, page: usize) {
-        const TITLES: [&str; 4] = [
+        const TITLES: [&str; 5] = [
             "常规 / General",
             "识别与隐私 / Recognition & Privacy",
             "自定义词典 / Custom Vocabulary",
             "AI 设置 / AI Settings",
+            "桌宠与 Live2D / Desktop Pet & Live2D",
         ];
         for (index, controls) in state.pages.iter().enumerate() {
             for control in controls {
@@ -1915,10 +2205,9 @@ mod windows_settings {
         T::Err: std::fmt::Display,
     {
         let value = get_text(control);
-        value
-            .trim()
-            .parse::<T>()
-            .map_err(|error| anyhow::anyhow!("{label} 不是有效数字：{error}"))
+        value.trim().parse::<T>().map_err(|error| {
+            anyhow::anyhow!("{label} 不是有效数字 / is not a valid number: {error}")
+        })
     }
 
     unsafe fn center_window(hwnd: HWND) {
