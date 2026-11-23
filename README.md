@@ -1,3 +1,8 @@
+> [!IMPORTANT]
+> **本项目已归档,不再维护。** 原因:Windows 端现已推出官方的豆包输入法,Aiko IME 已没有继续存在的必要。请直接使用官方豆包输入法。
+>
+> **This project is archived and no longer maintained.** Reason: the official Doubao IME is now available on Windows, so Aiko IME is no longer needed. Please use the official Doubao IME instead.
+
 # Aiko IME
 
 ![Aiko IME showcase](assets/aiko_readme_showcase.png)
